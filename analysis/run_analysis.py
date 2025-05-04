@@ -1,4 +1,8 @@
+
+import sys
 import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
+
 import torch
 import yaml
 from torch.utils.data import DataLoader
@@ -47,3 +51,4 @@ def main():
 
 if __name__ == '__main__':
     main()
+

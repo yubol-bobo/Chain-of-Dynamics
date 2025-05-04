@@ -11,8 +11,8 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import roc_auc_score, recall_score, accuracy_score, precision_score, f1_score
 from imblearn.over_sampling import SMOTE
 from models.retain import RETAIN
-from utils.metrics import create_metrics_dataframe
-from utils.visualization import plot_metrics
+# from utils.metrics import create_metrics_dataframe
+# from utils.visualization import plot_metrics
 
 def load_config(config_path):
     with open(config_path, 'r') as file:

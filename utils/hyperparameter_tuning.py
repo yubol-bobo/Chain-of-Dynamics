@@ -84,7 +84,7 @@ def hyperparameter_search(config, train_data, val_data):
     random.shuffle(combinations)
 
     device = torch.device(config['model']['device'])
-    save_path = config['paths']['save_path']
+    save_path = config['paths']['results_path']
     os.makedirs(save_path, exist_ok=True)
 
     best_f1, best_params = -np.inf, None
@@ -128,8 +128,9 @@ def hyperparameter_search(config, train_data, val_data):
     return best_params, best_f1
 
 def save_best_params(best_params, config):
-    save_path = os.path.join(config['paths']['save_path'], 'best_hyperparameters.yaml')
-    os.makedirs(config['paths']['save_path'], exist_ok=True)
+    best_params['device'] = config['model']['device']  # add device explicitly
+    save_path = os.path.join(config['paths']['results_path'], 'best_hyperparameters.yaml')
+    os.makedirs(config['paths']['results_path'], exist_ok=True)
     with open(save_path, 'w') as file:
         yaml.dump(best_params, file)
     print(f"Best hyperparameters saved to {save_path}")
