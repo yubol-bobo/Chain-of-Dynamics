@@ -1,6 +1,6 @@
 data:
-  raw_path: './data/raw/'
-  processed_path: './data/processed/ckd_merged_data_for_modeling.csv'
+  raw_path: './ckd_data/raw/'
+  processed_path: './ckd_data/processed/ckd_merged_data_for_modeling.csv'
   month_count: 24
 
 model:
@@ -25,7 +25,7 @@ hyperparameters:
 
 tuning:
   n_epochs: 50
-  
+
 paths:
   save_path: './models/'
   results_path: './Outputs/'

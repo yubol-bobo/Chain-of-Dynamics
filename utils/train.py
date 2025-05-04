@@ -112,41 +112,40 @@ def train_model(model, train_loader, val_loader, criterion, optimizer, config):
     return metrics
 
 def main():
-    config = load_config('../config/config.yaml')
-    os.makedirs(config['paths']['save_path'], exist_ok=True)
-    os.makedirs(config['paths']['results_path'], exist_ok=True)
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    root_dir = os.path.abspath(os.path.join(script_dir, '..'))
 
-    train_data, val_data, test_data = prepare_data(config)
+    config_path = os.path.join(root_dir, 'config', 'config.yaml')
+    best_params_path = os.path.join(root_dir, 'Outputs', 'best_hyperparameters.yaml')
 
-    train_loader = DataLoader(train_data, batch_size=config['model']['batch_size'], shuffle=True)
-    val_loader = DataLoader(val_data, batch_size=config['model']['batch_size'])
+    config = load_config(config_path)
 
+    # Check if best hyperparameters exist
+    if os.path.exists(best_params_path):
+        best_params = load_best_params(best_params_path)
+        config['model'].update(best_params)
+        print("✅ Loaded best hyperparameters.")
+    else:
+        print("⚠️ Best hyperparameters file not found. Using default parameters from config.yaml.")
+
+    device = torch.device(config['model']['device'])
+
+    train_data, val_data, _ = prepare_data(config)
     model = RETAIN(
         input_dim=config['model']['input_dim'],
         emb_dim=config['model']['emb_dim'],
         hidden_dim=config['model']['hidden_dim'],
         output_dim=config['model']['output_dim'],
         dropout=config['model']['dropout']
-    )
+    ).to(device)
 
-    criterion = nn.BCEWithLogitsLoss()
     optimizer = optim.Adam(model.parameters(), lr=config['model']['learning_rate'])
+    criterion = nn.BCEWithLogitsLoss()
 
-    metrics = train_model(model, train_loader, val_loader, criterion, optimizer, config)
+    train_loader = DataLoader(train_data, batch_size=config['model']['batch_size'], shuffle=True)
+    val_loader = DataLoader(val_data, batch_size=config['model']['batch_size'])
 
-    metrics_df = create_metrics_dataframe(
-        metrics['train_losses'], metrics['val_losses'], metrics['val_aucs'],
-        metrics['val_recalls'], metrics['val_accuracies'],
-        metrics['val_precisions'], metrics['val_f1s']
-    )
-    metrics_df.to_csv(os.path.join(config['paths']['results_path'], 'train_metrics.csv'), index=False)
-
-    plot_metrics(
-        metrics['train_losses'], metrics['val_losses'], metrics['val_aucs'],
-        metrics['val_recalls'], metrics['val_accuracies'],
-        metrics['val_precisions'], metrics['val_f1s'],
-        save_path=os.path.join(config['paths']['results_path'], 'train_metrics.png')
-    )
+    train_model(model, train_loader, val_loader, criterion, optimizer, config, device)
 
 if __name__ == '__main__':
     main()

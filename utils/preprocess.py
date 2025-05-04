@@ -98,7 +98,7 @@ def preprocess_data(config):
         .merge(stage_df[['TMA_Acct', 'ESRD']], on='TMA_Acct', how='left') \
         .merge(claim_df[['TMA_Acct', 'ESRD']], on='TMA_Acct', how='left', suffixes=('_x', '_y'))
 
-    data['ESRD'] = ((data['ESRD_x'].notna()) | (data['ESRD_y'].notna())).astype(int)
+    data['ESRD'] = ((data['ESRD_x'] == 1) | (data['ESRD_y'] == 1)).astype(int)
     data.drop(['ESRD_x', 'ESRD_y'], axis=1, inplace=True)
 
     # Sort columns by time
@@ -111,5 +111,6 @@ def preprocess_data(config):
     data.to_csv(processed, index=False)
 
 if __name__ == '__main__':
-    config = load_config('../config/config.yaml')
+    script_dir = os.path.dirname(os.path.abspath(__file__))
+    config = load_config(os.path.join(script_dir, '../config/config.yaml'))
     preprocess_data(config)

@@ -1,0 +1,5 @@
+batch_size: 128
+dropout: 0.2
+emb_dim: 64
+hidden_dim: 32
+learning_rate: 0.0001

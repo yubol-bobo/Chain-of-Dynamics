@@ -1,17 +1,20 @@
 import os
+import sys
 import yaml
 import itertools
 import random
+from collections import Counter
 import torch
 import torch.optim as optim
 import torch.nn as nn
-from torch.utils.data import DataLoader, TensorDataset, ConcatDataset
+from torch.utils.data import DataLoader, TensorDataset
 import pandas as pd
 import numpy as np
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import f1_score
+from sklearn.metrics import f1_score, roc_auc_score, accuracy_score, recall_score, precision_score
 from imblearn.over_sampling import SMOTE
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from models.retain import RETAIN
 from tqdm import tqdm
 
@@ -52,17 +55,28 @@ def prepare_data(config):
 
     return train_data, val_data, test_data
 
-def evaluate_model(model, loader, criterion, device):
+def evaluate_model(model, loader, device):
     model.eval()
-    y_true, y_pred = [], []
+    y_true, y_pred_prob = [], []
     with torch.no_grad():
         for inputs, labels in loader:
-            inputs, labels = inputs.to(device), labels.to(device)
+            inputs = inputs.to(device)
             outputs = model(inputs)
-            predicted_probs = torch.sigmoid(outputs).view(-1)
-            y_pred.extend(predicted_probs.cpu().numpy())
-            y_true.extend(labels.cpu().numpy())
-    return f1_score(y_true, np.array(y_pred) > 0.5)
+            probs = torch.sigmoid(outputs).view(-1)
+            y_pred_prob.extend(probs.cpu().numpy())
+            y_true.extend(labels.numpy())
+
+    y_pred_binary = np.array(y_pred_prob) > 0.5
+
+    metrics = {
+        'F1': f1_score(y_true, y_pred_binary),
+        'AUC': roc_auc_score(y_true, y_pred_prob),
+        'Accuracy': accuracy_score(y_true, y_pred_binary),
+        'Recall': recall_score(y_true, y_pred_binary),
+        'Precision': precision_score(y_true, y_pred_binary)
+    }
+
+    return metrics
 
 def hyperparameter_search(config, train_data, val_data):
     hyperparams = config['hyperparameters']
@@ -88,7 +102,6 @@ def hyperparameter_search(config, train_data, val_data):
         ).to(device)
 
         optimizer = optim.Adam(model.parameters(), lr=params_dict['learning_rate'])
-
         train_loader = DataLoader(train_data, batch_size=params_dict['batch_size'], shuffle=True)
         val_loader = DataLoader(val_data, batch_size=params_dict['batch_size'])
 
@@ -102,24 +115,27 @@ def hyperparameter_search(config, train_data, val_data):
                 loss.backward()
                 optimizer.step()
 
-        val_f1 = evaluate_model(model, val_loader, criterion, device)
+        val_metrics = evaluate_model(model, val_loader, device)
+        current_f1 = val_metrics['F1']
 
-        if val_f1 > best_f1:
-            best_f1, best_params = val_f1, params_dict
-            torch.save(model.state_dict(), os.path.join(save_path, 'best_model_hyperparams.pt'))
-            print(f"New Best Params: {best_params}, F1: {best_f1:.4f}")
+        # tqdm.write(f"Params: {params_dict} | Metrics: {val_metrics}")
+
+        if current_f1 > best_f1:
+            best_f1, best_params = current_f1, params_dict
+            torch.save(model.state_dict(), os.path.join(save_path, 'best_model.pt'))
+            tqdm.write(f"--> New Best Params: {best_params}, Metrics: {val_metrics}")
 
     return best_params, best_f1
 
 def save_best_params(best_params, config):
-    save_path = os.path.join(config['paths']['results_path'], 'best_hyperparameters.yaml')
-    os.makedirs(config['paths']['results_path'], exist_ok=True)
+    save_path = os.path.join(config['paths']['save_path'], 'best_hyperparameters.yaml')
+    os.makedirs(config['paths']['save_path'], exist_ok=True)
     with open(save_path, 'w') as file:
         yaml.dump(best_params, file)
     print(f"Best hyperparameters saved to {save_path}")
 
 def main():
-    config = load_config('../config/config.yaml')
+    config = load_config('config/config.yaml')
     train_data, val_data, _ = prepare_data(config)
     best_params, best_f1 = hyperparameter_search(config, train_data, val_data)
     save_best_params(best_params, config)
