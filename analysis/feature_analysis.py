@@ -2,85 +2,66 @@ import os
 import torch
 import numpy as np
 import pandas as pd
-import matplotlib.pyplot as plt
 import seaborn as sns
+import matplotlib.pyplot as plt
+from torch.utils.data import DataLoader
 from datetime import datetime
+from analysis_utils  import set_publication_style, load_config, load_trained_model
+from train import prepare_data
 
 timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
-def get_feature_contributions(model, data_loader, device):
+feature_list = [
+    'Diabetes', 'Htn', 'Cvd', 'Anemia', 'MA', 'Prot', 'SH', 'Phos', 'Athsc', 'CHF',
+    'Stroke', 'CD', 'MI', 'FE', 'MD', 'ND', 'S4', 'S5', 'Serum_Calcium', 'eGFR', 
+    'Phosphorus', 'Intact_PTH', 'Hemoglobin', 'UACR', 'Age', 'Gender', 'Race', 'BMI',
+    'n_claims_DR', 'n_claims_I', 'n_claims_O', 'n_claims_P', 'net_exp_DR', 'net_exp_I', 
+    'net_exp_O', 'net_exp_P'
+]
+
+def get_feature_weights(model, data_loader, device):
     model.eval()
-    contributions_list = []
-    
+    all_contributions = []
     with torch.no_grad():
         for inputs, _ in data_loader:
             inputs = inputs.to(device)
-            _ = model(inputs)
+            model(inputs)
+            batch_contrib = [model.compute_contributions(i) for i in range(inputs.size(0))]
+            all_contributions.extend(batch_contrib)
+    return np.array(all_contributions)
 
-            batch_contrib = []
-            for idx in range(inputs.size(0)):
-                contrib = model.compute_contributions(patient_idx=idx)
-                batch_contrib.append(contrib)
+def compute_feature_importance(contributions):
+    abs_contrib = np.abs(contributions)
+    importance = abs_contrib.sum(axis=(0,1))
+    return importance / importance.sum()
 
-            contributions_list.append(np.stack(batch_contrib))
-    
-    return np.concatenate(contributions_list, axis=0)
+def visualize_feature_importance(importance, save_dir="./visualizations"):
+    set_publication_style()
+    df = pd.DataFrame({'Feature': feature_list, 'Importance': importance})
+    df = df.sort_values('Importance', ascending=False).head(20)
 
-def visualize_feature_importance(model, data_loader, device, feature_names=None, top_k=20, save_dir="./visualizations"):
-    os.makedirs(save_dir, exist_ok=True)
-
-    contributions = get_feature_contributions(model, data_loader, device)
-    abs_contributions = np.abs(contributions)
-    feature_importance = abs_contributions.sum(axis=(0,1))
-    feature_importance /= feature_importance.sum()
-
-    if feature_names is None:
-        feature_names = [f'Feature {i+1}' for i in range(len(feature_importance))]
-
-    importance_df = pd.DataFrame({
-        'Feature': feature_names,
-        'Importance': feature_importance
-    }).sort_values(by='Importance', ascending=False).head(top_k)
-
-    plt.figure(figsize=(12, 8))
-    sns.barplot(x='Importance', y='Feature', data=importance_df, palette='mako')
-    plt.title('Top Feature Importance')
-    plt.xlabel('Importance')
+    plt.figure()
+    sns.barplot(x='Importance', y='Feature', data=df, palette='viridis')
+    plt.xlabel('Feature Importance')
     plt.ylabel('Feature')
-    plt.tight_layout()
 
-    save_path = os.path.join(save_dir, f"feature_importance_{timestamp}.png")
-    plt.savefig(save_path, dpi=300)
-    plt.show()
-
-def visualize_feature_importance_heatmap(model, data_loader, device, feature_names=None, top_k=10, save_dir="./visualizations"):
     os.makedirs(save_dir, exist_ok=True)
+    plt.savefig(f"{save_dir}/feature_importance_{timestamp}.png", dpi=300)
+    plt.close()
 
-    contributions = get_feature_contributions(model, data_loader, device)
-    abs_contributions = np.abs(contributions)
-    time_feature_importance = abs_contributions.sum(axis=0)
+    df.to_csv(f"{save_dir}/feature_importance_{timestamp}.csv", index=False)
 
-    top_indices = np.argsort(time_feature_importance.sum(axis=0))[-top_k:]
-    heatmap_data = time_feature_importance[:, top_indices]
+def main():
+    config = load_config('config/config.yaml')
+    device = torch.device(config['model']['device'])
+    model = load_trained_model(config, './models/retain_best_model.pt')
 
-    if feature_names is None:
-        feature_names = [f'Feature {i+1}' for i in top_indices]
-    else:
-        feature_names = [feature_names[i] for i in top_indices]
+    _, _, test_data = prepare_data(config)
+    test_loader = DataLoader(test_data, batch_size=config['model']['batch_size'])
 
-    plt.figure(figsize=(14, 10))
-    sns.heatmap(heatmap_data, cmap="YlGnBu", xticklabels=feature_names,
-                yticklabels=[f"t{i}" for i in range(heatmap_data.shape[0])],
-                annot=True, fmt=".3f")
-    plt.title('Feature Importance Heatmap')
-    plt.xlabel('Feature')
-    plt.ylabel('Time Step')
-    plt.tight_layout()
+    contributions = get_feature_weights(model, test_loader, device)
+    importance = compute_feature_importance(contributions)
+    visualize_feature_importance(importance)
 
-    save_path = os.path.join(save_dir, f"feature_importance_heatmap_{timestamp}.png")
-    plt.savefig(save_path, dpi=300)
-    plt.show()
-
-def visualize_all_feature_importance(model, data_loader, device, feature_names=None, save_dir="./visualizations"):
-    visualize_feature_importance(model, data_loader, device, feature_names, save_dir=save_dir)
-    visualize_feature_importance_heatmap(model, data_loader, device, feature_names, save_dir=save_dir)
+if __name__ == '__main__':
+    main()

@@ -122,7 +122,7 @@ def hyperparameter_search(config, train_data, val_data):
 
         if current_f1 > best_f1:
             best_f1, best_params = current_f1, params_dict
-            torch.save(model.state_dict(), os.path.join(save_path, 'best_model.pt'))
+            torch.save(model.state_dict(), os.path.join(save_path, 'retain_best_model.pt'))
             tqdm.write(f"--> New Best Params: {best_params}, Metrics: {val_metrics}")
 
     return best_params, best_f1
