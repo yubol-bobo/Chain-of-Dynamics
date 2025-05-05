@@ -4,6 +4,7 @@ import torch
 import yaml
 import seaborn as sns
 import matplotlib.pyplot as plt
+from datetime import datetime
 import matplotlib as mpl
 
 # Append root directory to the path to ensure correct imports
@@ -25,6 +26,11 @@ def set_publication_style(fontsize=20, label_fontweight='bold', figsize=(12, 8))
         'figure.titleweight': label_fontweight,
         'figure.figsize': figsize
     })
+
+
+def get_timestamp():
+    return datetime.now().strftime("%Y%m%d_%H%M%S")
+
 
 # Load YAML configuration
 def load_config(config_path):
@@ -61,3 +67,4 @@ def load_trained_model(config, model_path, hyperparam_path):
     model.eval()
 
     return model
+

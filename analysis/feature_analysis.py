@@ -6,10 +6,10 @@ import seaborn as sns
 import matplotlib.pyplot as plt
 from torch.utils.data import DataLoader
 from datetime import datetime
-from analysis_utils  import set_publication_style, load_config, load_trained_model
-from train import prepare_data
+from analysis_utils  import set_publication_style, load_config, load_trained_model,get_timestamp
+from utils.train import prepare_data
 
-timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+
 
 feature_list = [
     'Diabetes', 'Htn', 'Cvd', 'Anemia', 'MA', 'Prot', 'SH', 'Phos', 'Athsc', 'CHF',
@@ -51,7 +51,10 @@ def visualize_feature_importance(importance, save_dir="./visualizations"):
 
     df.to_csv(f"{save_dir}/feature_importance_{timestamp}.csv", index=False)
 
-def main():
+def main(timestamp=None):
+    if timestamp is None:
+        timestamp = get_timestamp()
+        
     config = load_config('config/config.yaml')
     device = torch.device(config['model']['device'])
     model = load_trained_model(config, './models/retain_best_model.pt')
