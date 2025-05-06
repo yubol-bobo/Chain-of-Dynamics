@@ -1,31 +1,40 @@
 data:
-  raw_path: './ckd_data/raw/'
-  processed_path: './ckd_data/processed/ckd_merged_data_for_modeling.csv'
   month_count: 24
-
+  processed_path: ./ckd_data/processed/ckd_merged_data_for_modeling.csv
+  raw_path: ./ckd_data/raw/
+hyperparameters:
+  batch_size:
+  - 128
+  dropout:
+  - 0.0
+  - 0.2
+  - 0.4
+  emb_dim:
+  - 16
+  - 32
+  - 64
+  hidden_dim:
+  - 32
+  - 64
+  - 128
+  learning_rate:
+  - 0.001
+  - 0.0001
 model:
-  input_dim: 36
-  output_dim: 1
+  batch_size: 128
+  device: cuda
+  dropout: 0.2
   emb_dim: 64
   hidden_dim: 128
-  dropout: 0.2
+  input_dim: 36
   learning_rate: 0.001
-  batch_size: 128
   max_seq_len: 50
   n_epochs: 100
+  output_dim: 1
   patience: 7
-  device: cuda
-
-hyperparameters:
-  emb_dim: [16, 32, 64]
-  hidden_dim: [32, 64, 128]
-  learning_rate: [0.001, 0.0001]
-  batch_size: [128]
-  dropout: [0.0, 0.2, 0.4]
-
+paths:
+  results_path: ./Outputs/
+  save_path: ./models/
+timestamp: '20250506_125213'
 tuning:
   n_epochs: 50
-
-paths:
-  save_path: './models/'
-  results_path: './Outputs/'

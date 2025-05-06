@@ -188,7 +188,7 @@ def plot_global_temporal_attention(model, data_loader, device, time_points=None,
     plt.tight_layout()
     
     print(f"Plot saved to: {save_path}")
-    plt.show()
+    # plt.show()
     
     # Also save the data for future reference
     data_path = os.path.join(save_dir, f"retain_temporal_attention_data_{timestamp}.csv")
@@ -313,7 +313,7 @@ def plot_temporal_comparison(model, data_loader, device, time_points=None,
     plt.tight_layout()
     
     print(f"Comparison plot saved to: {save_path}")
-    plt.show()
+    # plt.show()
     
     # Create a more detailed visualization with error bars and color coded by importance
     fig, ax = plt.subplots(figsize=(16, 10))
@@ -347,6 +347,7 @@ def plot_temporal_comparison(model, data_loader, device, time_points=None,
     ax.set_xticks(x)
     ax.set_xticklabels(time_points)
     
+    
     # Add explanation text
     ax.text(0.02, 0.98, "", 
              transform=ax.transAxes, fontsize=16, va='top', ha='left',
@@ -356,7 +357,7 @@ def plot_temporal_comparison(model, data_loader, device, time_points=None,
     bar_save_path = os.path.join(save_dir, f"retain_temporal_comparison_bar_{timestamp}.png")
     plt.savefig(bar_save_path, bbox_inches='tight', dpi=300)
     plt.tight_layout()
-    plt.show()
+    # plt.show()
     
     print(f"Bar comparison plot saved to: {bar_save_path}")
     

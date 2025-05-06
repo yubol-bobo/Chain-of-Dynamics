@@ -17,10 +17,16 @@ from imblearn.over_sampling import SMOTE
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 from models.retain import RETAIN
 from tqdm import tqdm
+from datetime import datetime
 
 def load_config(config_path):
     with open(config_path, 'r') as file:
         return yaml.safe_load(file)
+
+def save_config(config, config_path):
+    with open(config_path, 'w') as file:
+        yaml.dump(config, file)
+    print(f"Updated config saved to {config_path}")
 
 def prepare_data(config):
     data = pd.read_csv(config['data']['processed_path']).fillna(0)
@@ -78,7 +84,7 @@ def evaluate_model(model, loader, device):
 
     return metrics
 
-def hyperparameter_search(config, train_data, val_data):
+def hyperparameter_search(config, train_data, val_data, timestamp):
     hyperparams = config['hyperparameters']
     combinations = list(itertools.product(*hyperparams.values()))
     random.shuffle(combinations)
@@ -122,14 +128,15 @@ def hyperparameter_search(config, train_data, val_data):
 
         if current_f1 > best_f1:
             best_f1, best_params = current_f1, params_dict
-            torch.save(model.state_dict(), os.path.join(save_path, 'retain_best_model.pt'))
+            model_filename = os.path.join(save_path, f'retain_best_model_{timestamp}.pt')
+            torch.save(model.state_dict(), model_filename)
             tqdm.write(f"--> New Best Params: {best_params}, Metrics: {val_metrics}")
 
     return best_params, best_f1
 
-def save_best_params(best_params, config):
+def save_best_params(best_params, config, timestamp):
     best_params['device'] = config['model']['device']  # add device explicitly
-    save_path = os.path.join(config['paths']['results_path'], 'best_hyperparameters.yaml')
+    save_path = os.path.join(config['paths']['results_path'], f'best_hyperparameters_{timestamp}.yaml')
     os.makedirs(config['paths']['results_path'], exist_ok=True)
     with open(save_path, 'w') as file:
         yaml.dump(best_params, file)
@@ -137,9 +144,15 @@ def save_best_params(best_params, config):
 
 def main():
     config = load_config('config/config.yaml')
+    # Generate timestamp
+    timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+    config['timestamp'] = timestamp  # Add timestamp to config
+    
     train_data, val_data, _ = prepare_data(config)
-    best_params, best_f1 = hyperparameter_search(config, train_data, val_data)
-    save_best_params(best_params, config)
+    best_params, best_f1 = hyperparameter_search(config, train_data, val_data, timestamp)
+    save_best_params(best_params, config, timestamp)
+    save_config(config, 'config/config.yaml')
+    
     print(f"Hyperparameter tuning complete. Best F1: {best_f1:.4f}")
 
 if __name__ == '__main__':

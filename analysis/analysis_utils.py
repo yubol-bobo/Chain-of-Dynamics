@@ -27,11 +27,6 @@ def set_publication_style(fontsize=20, label_fontweight='bold', figsize=(12, 8))
         'figure.figsize': figsize
     })
 
-
-def get_timestamp():
-    return datetime.now().strftime("%Y%m%d_%H%M%S")
-
-
 # Load YAML configuration
 def load_config(config_path):
     with open(config_path, 'r') as file:

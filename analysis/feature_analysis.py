@@ -66,5 +66,6 @@ def main(timestamp=None):
     importance = compute_feature_importance(contributions)
     visualize_feature_importance(importance)
 
+
 if __name__ == '__main__':
     main()
