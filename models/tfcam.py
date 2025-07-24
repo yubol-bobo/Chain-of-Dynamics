@@ -202,6 +202,9 @@ class TFCAM(nn.Module):
             output: Prediction tensor of shape [batch_size, output_dim]
         """
         batch_size, seq_len, _ = x.size()
+
+        # Store original input for interpretability (like RETAIN)
+        self.original_input = x.clone()
         
         # Clear previous attention weights
         self.cross_attn_weights = []
@@ -215,8 +218,8 @@ class TFCAM(nn.Module):
         
         # Temporal attention
         temporal_lstm_out, _ = self.temporal_lstm(x)
-        temporal_attn_weights = torch.sigmoid(self.temporal_attn(temporal_lstm_out))
-        self.temporal_weights = temporal_attn_weights
+        temporal_attn_logits = self.temporal_attn(temporal_lstm_out)  # [batch_size, seq_len, 1]
+        self.temporal_weights = torch.softmax(temporal_attn_logits, dim=1)  # Use softmax like RETAIN
         
         # Feature-level attention
         feature_lstm_out, _ = self.feature_lstm(x)
@@ -232,7 +235,7 @@ class TFCAM(nn.Module):
             self.cross_attn_weights.append(attn_weights)
         
         # Apply temporal attention
-        x = x * temporal_attn_weights
+        x = x * self.temporal_weights
         
         # Global average pooling
         x = torch.mean(x, dim=1)  # [batch_size, emb_dim]

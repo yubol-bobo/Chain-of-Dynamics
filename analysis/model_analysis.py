@@ -29,20 +29,13 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 from models.retain import RETAIN
 from models.tfcam import TFCAM
-try:
-    from models.hcta import HCTA
-except ImportError:
-    HCTA = None
-try:
-    from models.enhanced_tfcam import EnhancedTFCAM
-except ImportError:
-    EnhancedTFCAM = None
+from models.ctga import CTGA
+
 
 MODEL_MAP = {
     'retain': RETAIN,
     'tfcam': TFCAM,
-    'hcta': HCTA,
-    'enhanced_tfcam': EnhancedTFCAM
+    'ctga': CTGA
 }
 
 
@@ -329,6 +322,83 @@ def plot_interactive_network(G, output_file="interactive_network.html"):
     net.show_buttons(filter_=['physics'])
     net.show(output_file, notebook=False)
 
+def compute_ctga_cross_feature_cov_corr(model, data_loader, feature_names=None, time_points=None, output_dir=None, model_name='ctga'):
+    """
+    For CTGA: Compute and save cross-feature covariance and correlation matrices for each time step, averaged across layers, projected back to feature space.
+    Output as CSVs with block matrix structure (features x time).
+    """
+    import numpy as np
+    import pandas as pd
+    cov_matrices = []  # [layer][time][input_dim, input_dim]
+    corr_matrices = []
+    input_dim = model.input_dim
+    emb_dim = model.emb_dim
+    num_time = None
+    embedding_weight = model.embedding.weight.detach().cpu().numpy()  # [emb_dim, input_dim]
+    for inputs, _ in data_loader:
+        inputs = inputs.to(next(model.parameters()).device)
+        with torch.no_grad():
+            _ = model(inputs)
+            cross_feature_list = model.get_attention_weights().get('cross_feature', None)
+            if not isinstance(cross_feature_list, list):
+                print("[WARNING] CTGA cross_feature is not a list. Skipping.")
+                return
+            if num_time is None:
+                num_time = cross_feature_list[0].shape[1]
+            # For each layer
+            for layer_idx, layer_hidden in enumerate(cross_feature_list):
+                # layer_hidden: [batch, seq_len, emb_dim]
+                time_covs = []
+                time_corrs = []
+                for t in range(layer_hidden.shape[1]):
+                    features_t = layer_hidden[:, t, :].cpu().numpy()  # [batch, emb_dim]
+                    # Project to feature space: [batch, emb_dim] @ [emb_dim, input_dim] = [batch, input_dim]
+                    features_t_proj = features_t @ embedding_weight  # [batch, input_dim]
+                    if features_t_proj.shape[0] < 2:
+                        cov = np.full((input_dim, input_dim), np.nan)
+                        corr = np.full((input_dim, input_dim), np.nan)
+                    else:
+                        cov = np.cov(features_t_proj, rowvar=False)
+                        corr = np.corrcoef(features_t_proj, rowvar=False)
+                    time_covs.append(cov)
+                    time_corrs.append(corr)
+                cov_matrices.append(time_covs)
+                corr_matrices.append(time_corrs)
+        break  # Only need one batch for analysis
+    # Average across layers
+    cov_matrices = np.array(cov_matrices)  # [num_layers, num_time, input_dim, input_dim]
+    corr_matrices = np.array(corr_matrices)
+    avg_cov = np.nanmean(cov_matrices, axis=0)  # [num_time, input_dim, input_dim]
+    avg_corr = np.nanmean(corr_matrices, axis=0)
+    # Build block matrix for CSV
+    if feature_names is None:
+        feature_names = [f"Feature_{i+1}" for i in range(input_dim)]
+    if time_points is None:
+        time_points = [f"t-{i}" for i in range(num_time)]
+    labels = [f"{feature_names[f]}_{time_points[t]}" for t in range(num_time) for f in range(input_dim)]
+    block_cov = np.full((num_time * input_dim, num_time * input_dim), np.nan)
+    block_corr = np.full((num_time * input_dim, num_time * input_dim), np.nan)
+    for t in range(num_time):
+        for u in range(num_time):
+            row_start = t * input_dim
+            row_end = (t + 1) * input_dim
+            col_start = u * input_dim
+            col_end = (u + 1) * input_dim
+            if t >= u:  # Only fill lower triangle (causal half)
+                block_cov[row_start:row_end, col_start:col_end] = avg_cov[t]
+                block_corr[row_start:row_end, col_start:col_end] = avg_corr[t]
+            # else: leave as NaN
+    df_cov = pd.DataFrame(block_cov, index=labels, columns=labels)
+    df_corr = pd.DataFrame(block_corr, index=labels, columns=labels)
+    if output_dir is not None:
+        cov_path = os.path.join(output_dir, f"{model_name}_cross_feature_covariance.csv")
+        corr_path = os.path.join(output_dir, f"{model_name}_cross_feature_correlation.csv")
+        df_cov.to_csv(cov_path)
+        df_corr.to_csv(corr_path)
+        print(f"[INFO] CTGA cross-feature covariance CSV saved to: {cov_path}")
+        print(f"[INFO] CTGA cross-feature correlation CSV saved to: {corr_path}")
+    return df_cov, df_corr
+
 def main():
     parser = argparse.ArgumentParser(description='Unified Model Analysis Script')
     parser.add_argument('--model', type=str, required=True, help='Model type: retain, tfcam, hcta, enhanced_tfcam, mstca, ctga')
@@ -396,6 +466,7 @@ def main():
         print("No feature attention available for this model.")
 
     # Cross-temporal-feature analysis (CSV only, vectorized, for all models with compute_contributions)
+    df_influence = None
     if hasattr(model, 'compute_contributions'):
         try:
             print("[INFO] Running vectorized cross-temporal-feature influence analysis (CSV only)...")
@@ -405,16 +476,24 @@ def main():
             print(f"[INFO] Cross-temporal-feature influence CSV saved to: {csv_path}")
         except Exception as e:
             print(f"[WARNING] Cross-temporal-feature CSV analysis failed: {e}")
+            df_influence = None
     else:
         print("No cross-temporal-feature analysis available for this model.")
 
+    # CTGA-specific cross-feature analysis
+    if args.model.lower() == 'ctga':
+        print("[INFO] Running CTGA cross-feature covariance and correlation analysis...")
+        compute_ctga_cross_feature_cov_corr(model, data_loader, feature_names, time_points, args.output, model_name=args.model.lower())
+
     # Save interactive network
-    if _has_pyvis:
+    if df_influence is not None and _has_pyvis:
         print("[INFO] Generating interactive network visualization...")
         G = build_network_from_influence(df_influence, threshold=0.001)
         html_path = os.path.join(args.output, f'{args.model}_cross_temporal_feature_network.html')
         plot_interactive_network(G, output_file=html_path)
         print(f"[INFO] Interactive network saved to: {html_path}")
+    elif df_influence is None:
+        print("[INFO] No cross_feature attention available; skipping interactive network visualization.")
     else:
         print("[WARNING] pyvis not installed. Skipping interactive network visualization.")
 
