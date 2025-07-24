@@ -12,7 +12,7 @@ class RETAIN(nn.Module):
     "RETAIN: An Interpretable Predictive Model for Healthcare using Reverse Time Attention Mechanism"
     by Choi et al.
     """
-    def __init__(self, input_dim, emb_dim, hidden_dim, num_heads=None, num_layers=None, output_dim=1, dropout=0.2, max_seq_len=50):
+    def __init__(self, input_dim, emb_dim, hidden_dim, output_dim, dropout=0.2):
         super(RETAIN, self).__init__()
         
         # Note: num_heads and num_layers are not used in RETAIN but included for compatibility
@@ -46,59 +46,91 @@ class RETAIN(nn.Module):
         
         # Store original input for interpretability
         self.original_input = None
+
+        # Explicit weight initialization
+        def init_weights(m):
+            if isinstance(m, nn.Linear):
+                nn.init.xavier_uniform_(m.weight)
+                if m.bias is not None:
+                    nn.init.zeros_(m.bias)
+            elif isinstance(m, nn.GRU):
+                for name, param in m.named_parameters():
+                    if 'weight' in name:
+                        nn.init.xavier_uniform_(param)
+                    elif 'bias' in name:
+                        nn.init.zeros_(param)
+        self.apply(init_weights)
     
     def forward(self, x):
         """
         Forward pass through the RETAIN model
-        
-        Args:
-            x: Input tensor of shape (batch_size, seq_length, input_dim)
-            
-        Returns:
-            output: Prediction tensor of shape (batch_size, output_dim)
         """
         # Store original input for interpretability
         self.original_input = x.clone()
-        
         batch_size, seq_length, _ = x.size()
-        
+
+        # Debug: print embedding weights and bias for NaN/Inf
+        emb_weight = self.embedding.weight
+        emb_bias = self.embedding.bias
+        if torch.isnan(emb_weight).any() or torch.isinf(emb_weight).any():
+            print("[DEBUG] NaN/Inf detected in embedding weights:", emb_weight.flatten()[:10])
+        if torch.isnan(emb_bias).any() or torch.isinf(emb_bias).any():
+            print("[DEBUG] NaN/Inf detected in embedding bias:", emb_bias.flatten()[:10])
+
         # Embedding
         embedded = self.embedding(x)  # (batch_size, seq_length, emb_dim)
         embedded = self.dropout(embedded)
-        
+        if torch.isnan(embedded).any():
+            print("[DEBUG] NaN detected after embedding:", embedded.flatten()[:10])
+
         # Visit-level attention (alpha)
         alpha_hidden, _ = self.alpha_gru(embedded)  # (batch_size, seq_length, hidden_dim)
+        if torch.isnan(alpha_hidden).any():
+            print("[DEBUG] NaN detected after alpha_gru:", alpha_hidden.flatten()[:10])
         alpha_attn = self.alpha_attn(alpha_hidden)  # (batch_size, seq_length, 1)
-        
+        if torch.isnan(alpha_attn).any():
+            print("[DEBUG] NaN detected after alpha_attn:", alpha_attn.flatten()[:10])
+
         # Apply softmax to get attention weights (reversed for RETAIN)
-        # In RETAIN, the attention is reversed to look backward in time
         self.alpha_weights = F.softmax(alpha_attn, dim=1)  # (batch_size, seq_length, 1)
-        
+        if torch.isnan(self.alpha_weights).any():
+            print("[DEBUG] NaN detected after alpha_weights (softmax):", self.alpha_weights.flatten()[:10])
+
         # Variable-level attention (beta)
         beta_hidden, _ = self.beta_gru(embedded)  # (batch_size, seq_length, hidden_dim)
+        if torch.isnan(beta_hidden).any():
+            print("[DEBUG] NaN detected after beta_gru:", beta_hidden.flatten()[:10])
         self.beta_weights = torch.tanh(self.beta_attn(beta_hidden))  # (batch_size, seq_length, emb_dim)
-        
+        if torch.isnan(self.beta_weights).any():
+            print("[DEBUG] NaN detected after beta_weights (tanh):", self.beta_weights.flatten()[:10])
+
         # Element-wise multiplication of beta and embedded
         weighted_embedded = self.beta_weights * embedded  # (batch_size, seq_length, emb_dim)
-        
+        if torch.isnan(weighted_embedded).any():
+            print("[DEBUG] NaN detected after weighted_embedded:", weighted_embedded.flatten()[:10])
+
         # Weight by alpha and sum across time
         context_vector = torch.sum(self.alpha_weights * weighted_embedded, dim=1)  # (batch_size, emb_dim)
-        
+        if torch.isnan(context_vector).any():
+            print("[DEBUG] NaN detected after context_vector:", context_vector.flatten()[:10])
+
         # Output projection
         output = self.output_layer(context_vector)  # (batch_size, output_dim)
-        
+        if torch.isnan(output).any():
+            print("[DEBUG] NaN detected after output_layer:", output.flatten()[:10])
+
         return output
     
     def get_attention_weights(self):
         """
         Returns attention weights for interpretability.
-        
         Returns:
-            Dictionary containing different attention weights
+            Dictionary containing standardized attention weights
         """
         return {
-            "alpha": self.alpha_weights,  # Visit-level attention
-            "beta": self.beta_weights,    # Variable-level attention
+            'temporal': self.alpha_weights,  # Visit-level attention
+            'feature': self.beta_weights,    # Variable-level attention
+            'cross_feature': None
         }
     
     def compute_contributions(self, patient_idx=0):

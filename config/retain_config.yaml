@@ -1,0 +1,54 @@
+data:
+  month_count: 24
+  processed_path: ./ckd_data/processed/data_for_modeling_corrected.csv
+  raw_path: ./ckd_data/raw/
+hyperparameters:
+  batch_size:
+    - 16
+    - 32
+    - 64
+  dropout:
+    - 0.1
+    - 0.2
+    - 0.3
+  emb_dim:
+    - 32
+    - 64
+    - 128
+  hidden_dim:
+    - 64
+    - 128
+    - 256
+  learning_rate:
+    - 0.0001
+    - 0.001
+    - 0.01
+  num_heads:
+    - 4
+    - 8
+    - 16
+  num_layers:
+    - 2
+    - 3
+    - 4
+model:
+  type: 'retain'
+  input_dim: 37
+  emb_dim: 64
+  hidden_dim: 128
+  num_heads: 8
+  num_layers: 3
+  output_dim: 1
+  dropout: 0.2
+  learning_rate: 0.001
+  batch_size: 32
+  n_epochs: 20
+  patience: 7
+paths:
+  results_path: ./Outputs/saved_models/
+  save_path: ./Outputs/saved_models/
+
+timestamp: '20250723_170000'
+
+tuning:
+  n_epochs: 500 
