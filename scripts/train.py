@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Unified Training Script for RETAIN and TFCAM Models
+Unified Training Script for Clinical Models
 
-This script provides a unified training interface for both RETAIN and TFCAM models,
+This script provides a unified training interface for BiLSTM, RETAIN, and CoI models,
 with support for hyperparameter tuning, TSMOTE data balancing, and comprehensive
 training metrics.
 """
@@ -25,20 +25,16 @@ import itertools
 import random
 import matplotlib.pyplot as plt
 import seaborn as sns
+from sklearn.experimental import enable_iterative_imputer  # noqa
+from sklearn.impute import IterativeImputer
 
-# Add utils to path
-sys.path.append(os.path.dirname(__file__))
-from tsmote import TSMOTE
-
-# Add the project root to the path
+# Add project root to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from models.retain import RETAIN
-from models.tfcam import TFCAM
-from models.enhanced_tfcam import EnhancedTFCAM
-from models.hcta import HCTA
-from models.ctga import CTGA
-from models.mstca import MSTCA
+from src.data.tsmote import TSMOTE
+from src.models.retain import RETAIN
+from src.models.coi import CoI
+from src.models.bilstm import BiLSTM
 
 def get_shape(x):
     if hasattr(x, 'shape'):
@@ -89,98 +85,194 @@ def prepare_data(config):
         train_data, val_data, test_data: TensorDataset objects
     """
     print("Preparing data...")
-    data = pd.read_csv(config['data']['processed_path']).fillna(0)
-    shape_0 = data.shape[0]
-    print(f"✅ Data loaded: {data.shape}")
-    
-    input_dim = config['model']['input_dim']
-    num_period = config['data']['month_count'] // 3
-    print(f"✅ Input dim: {input_dim}, Num periods: {num_period}")
-    
-    # Extract features and labels
-    features = data.drop(columns=['TMA_Acct', 'ESRD'])
-    labels = data['ESRD']
-    print(f"✅ Features shape: {features.shape}, Labels shape: {labels.shape}")
-    
-    # Clean features: replace NaN and Inf with 0.0
-    features = np.nan_to_num(features, nan=0.0, posinf=0.0, neginf=0.0)
-    
-    # Normalize features
-    scaler = StandardScaler()
-    features_normalized = scaler.fit_transform(features)
-    
-    # Reshape the data to n_patient x timesteps x input_dim
-    features_reshaped = features_normalized.reshape(shape_0, num_period, input_dim)
+    processed_path = config['data']['processed_path']
+    label_path = config['data'].get('label_path')
+    if processed_path.endswith('.npy'):
+        features = np.load(processed_path)
+        if label_path and label_path.endswith('.npy'):
+            labels = np.load(label_path)
+        else:
+            raise ValueError('Label path must be provided and end with .npy when using .npy features.')
+        # Check for all-NaN features before imputation
+        all_nan_features = np.all(np.isnan(features), axis=(0, 1))
+        if np.any(all_nan_features):
+            drop_indices = np.where(all_nan_features)[0]
+            print("[INFO] Dropping all-NaN features at indices:", drop_indices)
+            features = features[..., ~all_nan_features]
+        # Split the dataset into train, validation, and test sets
+        from sklearn.model_selection import train_test_split
+        X_train, X_temp, y_train, y_temp = train_test_split(
+            features, labels, test_size=0.4, stratify=labels, random_state=42
+        )
+        X_val, X_test, y_val, y_test = train_test_split(
+            X_temp, y_temp, test_size=0.5, stratify=y_temp, random_state=42
+        )
+        # MICE Imputation and Normalization (fit only on train, transform all)
+        from sklearn.experimental import enable_iterative_imputer
+        from sklearn.impute import IterativeImputer
+        from sklearn.preprocessing import StandardScaler
+        n_patients_train, timesteps, n_features = X_train.shape
+        n_patients_val, _, _ = X_val.shape
+        n_patients_test, _, _ = X_test.shape
+        X_train_2d = X_train.reshape(-1, n_features)
+        X_val_2d = X_val.reshape(-1, n_features)
+        X_test_2d = X_test.reshape(-1, n_features)
+        print('[DEBUG] Before imputation: Any NaNs in train?', np.isnan(X_train_2d).any())
+        imputer = IterativeImputer(random_state=42, max_iter=10)
+        X_train_imputed = imputer.fit_transform(X_train_2d)
+        X_val_imputed = imputer.transform(X_val_2d)
+        X_test_imputed = imputer.transform(X_test_2d)
+        print('[DEBUG] After imputation: Any NaNs in train?', np.isnan(X_train_imputed).any())
+        print('[DEBUG] After imputation: Any NaNs in val?', np.isnan(X_val_imputed).any())
+        print('[DEBUG] After imputation: Any NaNs in test?', np.isnan(X_test_imputed).any())
+        scaler = StandardScaler()
+        X_train_scaled = scaler.fit_transform(X_train_imputed)
+        X_val_scaled = scaler.transform(X_val_imputed)
+        X_test_scaled = scaler.transform(X_test_imputed)
+        print('[DEBUG] After normalization: Any NaNs in train?', np.isnan(X_train_scaled).any())
+        print('[DEBUG] After normalization: Any NaNs in val?', np.isnan(X_val_scaled).any())
+        print('[DEBUG] After normalization: Any NaNs in test?', np.isnan(X_test_scaled).any())
+        X_train = X_train_scaled.reshape(n_patients_train, timesteps, n_features)
+        X_val = X_val_scaled.reshape(n_patients_val, timesteps, n_features)
+        X_test = X_test_scaled.reshape(n_patients_test, timesteps, n_features)
+        # Forcibly replace any remaining NaNs/Infs
+        X_train = np.nan_to_num(X_train, nan=0.0, posinf=0.0, neginf=0.0)
+        X_val = np.nan_to_num(X_val, nan=0.0, posinf=0.0, neginf=0.0)
+        X_test = np.nan_to_num(X_test, nan=0.0, posinf=0.0, neginf=0.0)
+        print('[DEBUG] Feature min/max after all preprocessing (train):', np.nanmin(X_train), np.nanmax(X_train))
+        print('[DEBUG] Feature min/max after all preprocessing (val):', np.nanmin(X_val), np.nanmax(X_val))
+        print('[DEBUG] Feature min/max after all preprocessing (test):', np.nanmin(X_test), np.nanmax(X_test))
+        # Save imputed/scaled test set for analysis
+        model_type = config['model'].get('type', 'model')
+        results_path = config['paths']['results_path']
+        np.save(os.path.join(results_path, f"{model_type}_X_test_imputed.npy"), X_test)
+        np.save(os.path.join(results_path, f"{model_type}_y_test_imputed.npy"), y_test)
+        # Apply TSMOTE for data balancing on training set
+        from utils.tsmote import TSMOTE
+        tsmote = TSMOTE(random_state=42, k_neighbors=5)
+        X_train, y_train = tsmote.fit_resample(X_train, y_train)
+        # Compute class weights from resampled training labels
+        
+        from collections import Counter
+        y_train_flat = y_train if y_train.ndim == 1 else y_train.argmax(axis=1)
+        classes = np.unique(y_train_flat)
+        class_counts = Counter(y_train_flat)
+        total = sum(class_counts.values())
+        class_weights = {cls: total/count for cls, count in class_counts.items()}
+        # Normalize weights
+        max_weight = max(class_weights.values())
+        class_weights = {cls: w/max_weight for cls, w in class_weights.items()}
+        print(f"[INFO] Using class weights in loss: {class_weights}")
+        import torch
+        class_weights_tensor = torch.tensor([class_weights[cls] for cls in sorted(class_weights.keys())], dtype=torch.float32)
+        # Save class_weights_tensor in config for use in training
+        config['class_weights_tensor'] = class_weights_tensor
+        import torch
+        from torch.utils.data import TensorDataset
+        def to_tensor(x):
+            if not isinstance(x, np.ndarray):
+                x = np.array(x)
+            return torch.as_tensor(x, dtype=torch.float32)
+        X_train = to_tensor(X_train)
+        X_val = to_tensor(X_val)
+        X_test = to_tensor(X_test)
+        y_train = to_tensor(y_train)
+        y_val = to_tensor(y_val)
+        y_test = to_tensor(y_test)
+        train_data = TensorDataset(X_train, y_train)
+        val_data = TensorDataset(X_val, y_val)
+        test_data = TensorDataset(X_test, y_test)
+        return train_data, val_data, test_data
+    else:
+        data = pd.read_csv(processed_path).fillna(0)
+        shape_0 = data.shape[0]
+        print(f"✅ Data loaded: {data.shape}")
+        
+        input_dim = config['model']['input_dim']
+        num_period = config['data']['month_count'] // 3
+        print(f"✅ Input dim: {input_dim}, Num periods: {num_period}")
+        
+        # Extract features and labels
+        features = data.drop(columns=['TMA_Acct', 'ESRD'])
+        labels = data['ESRD']
+        print(f"✅ Features shape: {features.shape}, Labels shape: {labels.shape}")
+        
+        # Clean features: replace NaN and Inf with 0.0
+        features = np.nan_to_num(features, nan=0.0, posinf=0.0, neginf=0.0)
+        
+        # Normalize features
+        scaler = StandardScaler()
+        features_normalized = scaler.fit_transform(features)
+        
+        # Reshape the data to n_patient x timesteps x input_dim
+        features_reshaped = features_normalized.reshape(shape_0, num_period, input_dim)
 
-    # Convert to PyTorch tensors
-    features_tensor = torch.tensor(features_reshaped, dtype=torch.float32)
-    labels_tensor = torch.tensor(labels.values, dtype=torch.float32)
+        # Convert to PyTorch tensors
+        features_tensor = torch.tensor(features_reshaped, dtype=torch.float32)
+        labels_tensor = torch.tensor(labels.values, dtype=torch.float32)
 
-    # Split the dataset into train, validation, and test sets
-    X_train, X_temp, y_train, y_temp = train_test_split(
-        features_tensor, labels_tensor, test_size=0.4, stratify=labels, random_state=42
-    )
-    X_val, X_test, y_val, y_test = train_test_split(
-        X_temp, y_temp, test_size=0.5, stratify=y_temp, random_state=42
-    )
-    # Ensure all splits are numpy arrays before converting to tensors
-    def to_tensor(x):
-        if not isinstance(x, np.ndarray):
-            x = np.array(x)
-        return torch.as_tensor(x, dtype=torch.float32)
+        # Split the dataset into train, validation, and test sets
+        X_train, X_temp, y_train, y_temp = train_test_split(
+            features_tensor, labels_tensor, test_size=0.4, stratify=labels, random_state=42
+        )
+        X_val, X_test, y_val, y_test = train_test_split(
+            X_temp, y_temp, test_size=0.5, stratify=y_temp, random_state=42
+        )
+        # Ensure all splits are numpy arrays before converting to tensors
+        def to_tensor(x):
+            if not isinstance(x, np.ndarray):
+                x = np.array(x)
+            return torch.as_tensor(x, dtype=torch.float32)
 
-    X_train = to_tensor(X_train)
-    X_val = to_tensor(X_val)
-    X_test = to_tensor(X_test)
-    y_train = to_tensor(y_train)
-    y_val = to_tensor(y_val)
-    y_test = to_tensor(y_test)
+        X_train = to_tensor(X_train)
+        X_val = to_tensor(X_val)
+        X_test = to_tensor(X_test)
+        y_train = to_tensor(y_train)
+        y_val = to_tensor(y_val)
+        y_test = to_tensor(y_test)
 
-    print(f"✅ Data split - Train: {get_shape(X_train)}, Val: {get_shape(X_val)}, Test: {get_shape(X_test)}")  
-    
-    # Create Tensor datasets
-    train_data = TensorDataset(X_train, y_train)
-    val_data = TensorDataset(X_val, y_val)
-    test_data = TensorDataset(X_test, y_test)
+        print(f"✅ Data split - Train: {get_shape(X_train)}, Val: {get_shape(X_val)}, Test: {get_shape(X_test)}")  
+        
+        # Create Tensor datasets
+        train_data = TensorDataset(X_train, y_train)
+        val_data = TensorDataset(X_val, y_val)
+        test_data = TensorDataset(X_test, y_test)
 
-    # Convert PyTorch tensors to numpy arrays for TSMOTE
-    X_train_np = X_train.numpy()
-    y_train_np = y_train.numpy()
+        # Convert PyTorch tensors to numpy arrays for TSMOTE
+        X_train_np = X_train.numpy()
+        y_train_np = y_train.numpy()
 
-    # Apply TSMOTE for data balancing
-    tsmote = TSMOTE(random_state=42, k_neighbors=5)
-    X_train_resampled, y_train_resampled = tsmote.fit_resample(X_train_np, y_train_np)
+        # Apply TSMOTE for data balancing
+        tsmote = TSMOTE(random_state=42, k_neighbors=5)
+        X_train_resampled, y_train_resampled = tsmote.fit_resample(X_train_np, y_train_np)
 
-    # Convert the resampled data back to PyTorch tensors
-    X_train_tensor_resampled = to_tensor(X_train_resampled)
-    y_train_tensor_resampled = to_tensor(y_train_resampled)
-    train_data = TensorDataset(X_train_tensor_resampled, y_train_tensor_resampled)
+        # Convert the resampled data back to PyTorch tensors
+        X_train_tensor_resampled = to_tensor(X_train_resampled)
+        y_train_tensor_resampled = to_tensor(y_train_resampled)
+        train_data = TensorDataset(X_train_tensor_resampled, y_train_tensor_resampled)
 
-    return train_data, val_data, test_data
+        # Compute class weights from resampled training labels
+        y_train_flat = y_train_tensor_resampled if y_train_tensor_resampled.ndim == 1 else y_train_tensor_resampled.argmax(axis=1)
+        classes = np.unique(y_train_flat)
+        class_counts = Counter(y_train_flat)
+        total = sum(class_counts.values())
+        class_weights = {cls: total/count for cls, count in class_counts.items()}
+        # Normalize weights
+        max_weight = max(class_weights.values())
+        class_weights = {cls: w/max_weight for cls, w in class_weights.items()}
+        print(f"[INFO] Using class weights in loss: {class_weights}")
+        class_weights_tensor = torch.tensor([class_weights[cls] for cls in sorted(class_weights.keys())], dtype=torch.float32)
+        # Save class_weights_tensor in config for use in training
+        config['class_weights_tensor'] = class_weights_tensor
+
+        return train_data, val_data, test_data
 
 def create_model(config):
     """Create model based on config type"""
     model_type = config['model'].get('type', 'retain')
     
-    if model_type.lower() == 'tfcam':
-        model = TFCAM(
-            input_dim=config['model']['input_dim'],
-            emb_dim=config['model']['emb_dim'],
-            hidden_dim=config['model']['hidden_dim'],
-            num_heads=config['model']['num_heads'],
-            num_layers=config['model']['num_layers'],
-            output_dim=config['model']['output_dim'],
-            dropout=config['model'].get('dropout', 0.2),
-            max_seq_len=config['model'].get('max_seq_len', 50)
-        )
-        
-        # Set DyT alpha initialization if specified
-        if 'alpha_init' in config['model']:
-            for module in model.modules():
-                if hasattr(module, 'alpha') and isinstance(module.alpha, torch.nn.Parameter):
-                    module.alpha.data = torch.ones_like(module.alpha) * config['model']['alpha_init']
-    elif model_type.lower() == 'enhanced_tfcam':
-        model = EnhancedTFCAM(
+    if model_type.lower() == 'coi':
+        model = CoI(
             input_dim=config['model']['input_dim'],
             emb_dim=config['model']['emb_dim'],
             hidden_dim=config['model']['hidden_dim'],
@@ -195,55 +287,15 @@ def create_model(config):
             for module in model.modules():
                 if hasattr(module, 'alpha') and isinstance(module.alpha, torch.nn.Parameter):
                     module.alpha.data = torch.ones_like(module.alpha) * config['model']['alpha_init']
-    elif model_type.lower() == 'hcta':
-        model = HCTA(
+    elif model_type.lower() == 'bilstm':
+        model = BiLSTM(
             input_dim=config['model']['input_dim'],
-            emb_dim=config['model']['emb_dim'],
             hidden_dim=config['model']['hidden_dim'],
-            num_heads=config['model']['num_heads'],
-            num_layers=config['model']['num_layers'],
+            num_layers=config['model'].get('num_layers', 2),
             output_dim=config['model']['output_dim'],
-            dropout=config['model'].get('dropout', 0.2),
-            max_seq_len=config['model'].get('max_seq_len', 50)
+            dropout=config['model'].get('dropout', 0.2)
         )
-        # Set DyT alpha initialization if specified
-        if 'alpha_init' in config['model']:
-            for module in model.modules():
-                if hasattr(module, 'alpha') and isinstance(module.alpha, torch.nn.Parameter):
-                    module.alpha.data = torch.ones_like(module.alpha) * config['model']['alpha_init']
-    elif model_type.lower() == 'ctga':
-        model = CTGA(
-            input_dim=config['model']['input_dim'],
-            emb_dim=config['model']['emb_dim'],
-            hidden_dim=config['model']['hidden_dim'],
-            num_heads=config['model']['num_heads'],
-            num_layers=config['model']['num_layers'],
-            output_dim=config['model']['output_dim'],
-            dropout=config['model'].get('dropout', 0.2),
-            max_seq_len=config['model'].get('max_seq_len', 50)
-        )
-        # Set DyT alpha initialization if specified
-        if 'alpha_init' in config['model']:
-            for module in model.modules():
-                if hasattr(module, 'alpha') and isinstance(module.alpha, torch.nn.Parameter):
-                    module.alpha.data = torch.ones_like(module.alpha) * config['model']['alpha_init']
-    elif model_type.lower() == 'mstca':
-        model = MSTCA(
-            input_dim=config['model']['input_dim'],
-            emb_dim=config['model']['emb_dim'],
-            hidden_dim=config['model']['hidden_dim'],
-            num_heads=config['model']['num_heads'],
-            num_layers=config['model']['num_layers'],
-            output_dim=config['model']['output_dim'],
-            dropout=config['model'].get('dropout', 0.2),
-            max_seq_len=config['model'].get('max_seq_len', 50)
-        )
-        # Set DyT alpha initialization if specified
-        if 'alpha_init' in config['model']:
-            for module in model.modules():
-                if hasattr(module, 'alpha') and isinstance(module.alpha, torch.nn.Parameter):
-                    module.alpha.data = torch.ones_like(module.alpha) * config['model']['alpha_init']
-    else:  # Default to RETAIN
+    elif model_type.lower() == 'retain':
         model = RETAIN(
             input_dim=config['model']['input_dim'],
             emb_dim=config['model']['emb_dim'],
@@ -251,6 +303,8 @@ def create_model(config):
             output_dim=config['model']['output_dim'],
             dropout=config['model'].get('dropout', 0.2)
         )
+    else:
+        raise ValueError(f"Unknown model type: {model_type}. Supported types: retain, coi, bilstm")
     
     return model
 
@@ -271,6 +325,14 @@ def train_model(model, train_loader, val_loader, criterion, optimizer, config, l
         'train_losses': [], 'val_losses': [], 'val_aucs': [],
         'val_recalls': [], 'val_accuracies': [], 'val_precisions': [], 'val_f1s': []
     }
+
+    # Use class weights if available
+    if 'class_weights_tensor' in config:
+        class_weights_tensor = config['class_weights_tensor'].to(next(model.parameters()).device)
+        if config['model'].get('output_dim', 1) == 1:
+            criterion = torch.nn.BCEWithLogitsLoss(pos_weight=class_weights_tensor[1])
+        else:
+            criterion = torch.nn.CrossEntropyLoss(weight=class_weights_tensor)
 
     for epoch in tqdm(range(n_epochs), desc="Training"):
         model.train()
@@ -329,8 +391,8 @@ def train_model(model, train_loader, val_loader, criterion, optimizer, config, l
         # print(f"Epoch [{epoch+1}/{n_epochs}] Train Loss: {metrics['train_losses'][-1]:.4f} "
               #f"Val Loss: {metrics['val_losses'][-1]:.4f} Val F1: {val_f1:.4f}")
 
-        # Optional: Log DyT alpha values for TFCAM
-        if log_alpha and model_type.lower() == 'tfcam':
+        # Optional: Log DyT alpha values for CoI
+        if log_alpha and model_type.lower() == 'coi':
             alpha_values = []
             for module in model.modules():
                 if hasattr(module, 'alpha') and isinstance(module.alpha, torch.nn.Parameter):
@@ -361,7 +423,7 @@ def hyperparameter_search(config, train_data, val_data, test_data, n_combination
     model_type = config['model'].get('type', 'retain')
     device = torch.device(config['model']['device'])
     save_path = config['paths']['save_path']
-    if model_type.lower() == 'tfcam':
+    if model_type.lower() == 'coi':
         hyperparameters = {
             'emb_dim': [16, 32, 64],
             'hidden_dim': [32, 64, 128],
@@ -372,51 +434,15 @@ def hyperparameter_search(config, train_data, val_data, test_data, n_combination
             'dropout': [0, 0.2, 0.4],
             'alpha_init': [0.6, 0.8, 1.0]
         }
-    elif model_type.lower() == 'enhanced_tfcam':
+    elif model_type.lower() == 'bilstm':
         hyperparameters = {
-            'emb_dim': [16, 32, 64],
             'hidden_dim': [32, 64, 128],
-            'num_heads': [2, 4, 8],
-            'num_layers': [2, 4, 8],
+            'num_layers': [1, 2, 3],
             'learning_rate': [0.001, 0.0001],
             'batch_size': [64, 128],
-            'dropout': [0, 0.2, 0.4],
-            'alpha_init': [0.6, 0.8, 1.0]
+            'dropout': [0, 0.2, 0.4]
         }
-    elif model_type.lower() == 'hcta':
-        hyperparameters = {
-            'emb_dim': [16, 32, 64],
-            'hidden_dim': [32, 64, 128],
-            'num_heads': [2, 4, 8],
-            'num_layers': [2, 4, 8],
-            'learning_rate': [0.001, 0.0001],
-            'batch_size': [64, 128],
-            'dropout': [0, 0.2, 0.4],
-            'alpha_init': [0.6, 0.8, 1.0]
-        }
-    elif model_type.lower() == 'ctga':
-        hyperparameters = {
-            'emb_dim': [16, 32, 64],
-            'hidden_dim': [32, 64, 128],
-            'num_heads': [2, 4, 8],
-            'num_layers': [2, 4, 8],
-            'learning_rate': [0.001, 0.0001],
-            'batch_size': [64, 128],
-            'dropout': [0, 0.2, 0.4],
-            'alpha_init': [0.6, 0.8, 1.0]
-        }
-    elif model_type.lower() == 'mstca':
-        hyperparameters = {
-            'emb_dim': [16, 32, 64],
-            'hidden_dim': [32, 64, 128],
-            'num_heads': [2, 4, 8],
-            'num_layers': [2, 4, 8],
-            'learning_rate': [0.001, 0.0001],
-            'batch_size': [64, 128],
-            'dropout': [0, 0.2, 0.4],
-            'alpha_init': [0.6, 0.8, 1.0]
-        }
-    else:
+    elif model_type.lower() == 'retain':
         hyperparameters = {
             'emb_dim': [16, 32, 64],
             'hidden_dim': [32, 64, 128],
@@ -424,6 +450,8 @@ def hyperparameter_search(config, train_data, val_data, test_data, n_combination
             'batch_size': [64, 128],
             'dropout': [0, 0.2, 0.4]
         }
+    else:
+        raise ValueError(f"Unknown model type: {model_type}. Supported types: retain, coi, bilstm")
     param_names = list(hyperparameters.keys())
     param_values = list(hyperparameters.values())
     all_combinations = list(itertools.product(*param_values))
@@ -565,8 +593,8 @@ def main():
     import argparse
     import os
     # Parse command line arguments
-    parser = argparse.ArgumentParser(description='Unified Training Script for RETAIN and TFCAM')
-    parser.add_argument('--model', type=str, required=True, help='Model type: retain, tfcam, hcta, enhanced_tfcam, mstca, ctga')
+    parser = argparse.ArgumentParser(description='Unified Training Script for Clinical Models')
+    parser.add_argument('--model', type=str, required=True, help='Model type: retain, coi, bilstm')
     parser.add_argument('--hyperparameter-search', action='store_true', 
                        help='Enable hyperparameter search')
     parser.add_argument('--n-combinations', type=int, default=10,
@@ -620,35 +648,87 @@ def main():
             print(f"✅ Best params: {best_params}")
             print(f"✅ Best model saved at: {best_model_path}")
             save_best_params(best_params, config, config['timestamp'])
-        return  # 只做超参数搜索和保存，不再重复训练
+        # return  # 只做超参数搜索和保存，不再重复训练
 
-    # Create model with final parameters
+    # # Create model with final parameters
+    # model = create_model(config)
+    # print("✅ Model created.")
+    
+    # # Set up training
+    # device = torch.device(config['model']['device'])
+    # model.to(device)
+    # optimizer = optim.Adam(model.parameters(), lr=config['train']['lr'])
+    # criterion = nn.BCEWithLogitsLoss()
+    
+    # train_loader = DataLoader(train_data, batch_size=config['train']['batch_size'], shuffle=True)
+    # val_loader = DataLoader(val_data, batch_size=config['train']['batch_size'])
+    
+    # # Train model
+    # metrics = train_model(model, train_loader, val_loader, criterion, optimizer, config)
+    # print("✅ Model trained.")
+    
+    # # Save training results
+    # save_training_results(metrics, config)
+    # plot_training_metrics(metrics, config)
+    
+    # # Print final results
+    # best_f1 = max(metrics['val_f1s'])
+    # best_auc = max(metrics['val_aucs'])
+    # print(f"\n🎉 Training completed!")
+    # print(f"📊 Best F1 Score: {best_f1:.4f}")
+    # print(f"📊 Best AUC Score: {best_auc:.4f}")
+
+    # After hyperparameter search and best model selection, evaluate on test set
+    import torch
+    from torch.utils.data import DataLoader
+    from sklearn.metrics import f1_score, roc_auc_score, accuracy_score, precision_score
+    import yaml
+    print("\n[INFO] Evaluating best model on test set...")
+    # Load best model
+    device = torch.device(config['model'].get('device', 'cpu'))
     model = create_model(config)
-    print("✅ Model created.")
-    
-    # Set up training
-    device = torch.device(config['model']['device'])
+    checkpoint = torch.load(best_model_path, map_location=device)
+    model.load_state_dict(checkpoint['model_state_dict'])
     model.to(device)
-    optimizer = optim.Adam(model.parameters(), lr=config['model']['learning_rate'])
-    criterion = nn.BCEWithLogitsLoss()
-    
-    train_loader = DataLoader(train_data, batch_size=config['model']['batch_size'], shuffle=True)
-    val_loader = DataLoader(val_data, batch_size=config['model']['batch_size'])
-    
-    # Train model
-    metrics = train_model(model, train_loader, val_loader, criterion, optimizer, config)
-    print("✅ Model trained.")
-    
-    # Save training results
-    save_training_results(metrics, config)
-    plot_training_metrics(metrics, config)
-    
-    # Print final results
-    best_f1 = max(metrics['val_f1s'])
-    best_auc = max(metrics['val_aucs'])
-    print(f"\n🎉 Training completed!")
-    print(f"📊 Best F1 Score: {best_f1:.4f}")
-    print(f"📊 Best AUC Score: {best_auc:.4f}")
+    model.eval()
+    test_loader = DataLoader(test_data, batch_size=config['train']['batch_size'], shuffle=False)
+    all_preds = []
+    all_labels = []
+    with torch.no_grad():
+        for inputs, labels in test_loader:
+            inputs = inputs.to(device)
+            labels = labels.to(device)
+            outputs = model(inputs)
+            if outputs.shape[-1] == 1 or len(outputs.shape) == 1:
+                probs = torch.sigmoid(outputs).squeeze().cpu().numpy()
+                preds = (probs > 0.5).astype(int)
+            else:
+                probs = torch.softmax(outputs, dim=-1).cpu().numpy()
+                preds = np.argmax(probs, axis=-1)
+            all_preds.append(preds)
+            all_labels.append(labels.cpu().numpy())
+    all_preds = np.concatenate(all_preds)
+    all_labels = np.concatenate(all_labels)
+    f1 = f1_score(all_labels, all_preds)
+    try:
+        auroc = roc_auc_score(all_labels, all_preds)
+    except Exception:
+        auroc = float('nan')
+    acc = accuracy_score(all_labels, all_preds)
+    prec = precision_score(all_labels, all_preds)
+    print(f"[TEST] F1: {f1:.4f}, AUROC: {auroc:.4f}, Accuracy: {acc:.4f}, Precision: {prec:.4f}")
+    # Save metrics to YAML
+    metrics = {
+        'f1': float(f1),
+        'auroc': float(auroc),
+        'accuracy': float(acc),
+        'precision': float(prec)
+    }
+    model_type = config['model'].get('type', 'model')
+    metrics_path = os.path.join(config['paths']['results_path'], f'{model_type}_test_metrics.yaml')
+    with open(metrics_path, 'w') as f:
+        yaml.dump(metrics, f)
+    print(f"[TEST] Metrics saved to: {metrics_path}")
 
 if __name__ == '__main__':
     main() 

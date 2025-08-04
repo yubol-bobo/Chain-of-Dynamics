@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-TFCAM (Time-Feature Cross Attention Mechnism) Model
+CoI (Chain of Influence) Model
 
-This module implements the TFCAM model with DyT (Dynamic Tanh) normalization,
+This module implements the Chain of Influence model with DyT (Dynamic Tanh) normalization,
 which combines temporal attention and cross-feature attention to detect
 how feature A at time t affects feature B at time t+k.
 
@@ -111,9 +111,9 @@ class CrossFeatureAttention(nn.Module):
         return x, attn_weights
 
 
-class TFCAM(nn.Module):
+class CoI(nn.Module):
     """
-    Time-Feature Cross Attention Networks (TFCAM)
+    Chain of Influence (CoI) Model
     
     A model combining temporal attention and cross-feature attention,
     designed to detect how feature A at time t affects feature B at time t+k.
@@ -128,7 +128,7 @@ class TFCAM(nn.Module):
     
     def __init__(self, input_dim, emb_dim, hidden_dim, num_heads, num_layers, 
                  output_dim=1, dropout=0.2, max_seq_len=50):
-        super(TFCAM, self).__init__()
+        super(CoI, self).__init__()
         
         self.input_dim = input_dim
         self.emb_dim = emb_dim
@@ -193,7 +193,7 @@ class TFCAM(nn.Module):
         
     def forward(self, x):
         """
-        Forward pass of TFCAM model.
+        Forward pass of CoI model.
         
         Args:
             x: Input tensor of shape [batch_size, seq_len, input_dim]
@@ -202,9 +202,6 @@ class TFCAM(nn.Module):
             output: Prediction tensor of shape [batch_size, output_dim]
         """
         batch_size, seq_len, _ = x.size()
-
-        # Store original input for interpretability (like RETAIN)
-        self.original_input = x.clone()
         
         # Clear previous attention weights
         self.cross_attn_weights = []
@@ -218,8 +215,8 @@ class TFCAM(nn.Module):
         
         # Temporal attention
         temporal_lstm_out, _ = self.temporal_lstm(x)
-        temporal_attn_logits = self.temporal_attn(temporal_lstm_out)  # [batch_size, seq_len, 1]
-        self.temporal_weights = torch.softmax(temporal_attn_logits, dim=1)  # Use softmax like RETAIN
+        temporal_attn_weights = torch.sigmoid(self.temporal_attn(temporal_lstm_out))
+        self.temporal_weights = temporal_attn_weights
         
         # Feature-level attention
         feature_lstm_out, _ = self.feature_lstm(x)
@@ -235,7 +232,7 @@ class TFCAM(nn.Module):
             self.cross_attn_weights.append(attn_weights)
         
         # Apply temporal attention
-        x = x * self.temporal_weights
+        x = x * temporal_attn_weights
         
         # Global average pooling
         x = torch.mean(x, dim=1)  # [batch_size, emb_dim]

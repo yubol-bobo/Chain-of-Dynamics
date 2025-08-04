@@ -3,8 +3,8 @@ import yaml
 
 def report_best_model(summary_path=None):
     if summary_path is None:
-        # 默认查找 Outputs/tfcam_hypersearch_summary.yaml
-        summary_path = os.path.join('Outputs', 'tfcam_hypersearch_summary.yaml')
+        # 默认查找 Outputs/coi_hypersearch_summary.yaml
+        summary_path = os.path.join('Outputs', 'coi_hypersearch_summary.yaml')
     if not os.path.exists(summary_path):
         print(f"Summary file not found: {summary_path}")
         return

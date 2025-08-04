@@ -29,7 +29,7 @@ hyperparameters:
   - 4
   - 6
 model:
-  type: tfcan
+  type: coi
   batch_size: 128
   device: cpu
   dropout: 0.2
@@ -38,10 +38,10 @@ model:
   input_dim: 37
   learning_rate: 0.001
   max_seq_len: 50
-  n_epochs: 20
+  n_epochs: 500
   output_dim: 1
   patience: 7
-  # TFCAN specific parameters
+  # CoI specific parameters
   num_heads: 4
   num_layers: 4
   alpha_init: 0.8

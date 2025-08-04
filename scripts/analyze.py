@@ -3,7 +3,7 @@
 Unified Model Analysis Script
 
 Performs temporal, feature, and cross-temporal-feature analysis for any model
-(RETAIN, TFCAM, HCTA, EnhancedTFCAM, etc.) that exposes get_attention_weights().
+(RETAIN, CoI, BiLSTM) that exposes get_attention_weights().
 """
 
 import os
@@ -27,15 +27,15 @@ except ImportError:
 # Add project root to path
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
-from models.retain import RETAIN
-from models.tfcam import TFCAM
-from models.ctga import CTGA
+from src.models.retain import RETAIN
+from src.models.coi import CoI
+from src.models.bilstm import BiLSTM
 
 
 MODEL_MAP = {
     'retain': RETAIN,
-    'tfcam': TFCAM,
-    'ctga': CTGA
+    'coi': CoI,
+    'bilstm': BiLSTM
 }
 
 
@@ -81,23 +81,31 @@ def load_model(model_type, config, checkpoint_path, device):
     return model
 
 def prepare_data(config):
-    data = pd.read_csv(config['data']['processed_path']).fillna(0)
+    import os
+    import numpy as np
+    import torch
+    from torch.utils.data import TensorDataset, DataLoader
+    model_type = config['model'].get('type', 'model')
+    results_path = config['paths']['results_path']
+    X_test_path = os.path.join(results_path, f"{model_type}_X_test_imputed.npy")
+    y_test_path = os.path.join(results_path, f"{model_type}_y_test_imputed.npy")
+    if not (os.path.exists(X_test_path) and os.path.exists(y_test_path)):
+        raise FileNotFoundError(f"Imputed/scaled test set not found: {X_test_path} or {y_test_path}. Please run train.py first.")
+    X_test = np.load(X_test_path)
+    y_test = np.load(y_test_path)
+    def to_tensor(x):
+        if not isinstance(x, np.ndarray):
+            x = np.array(x)
+        return torch.as_tensor(x, dtype=torch.float32)
+    X_test = to_tensor(X_test)
+    y_test = to_tensor(y_test)
+    test_data = TensorDataset(X_test, y_test)
+    test_data_loader = DataLoader(test_data, batch_size=32, shuffle=False)
     input_dim = config['model']['input_dim']
     num_period = config['data']['month_count'] // 3
-    features = data.drop(columns=['TMA_Acct', 'ESRD'], errors='ignore').values
-    labels = data['ESRD'].values
-    from sklearn.preprocessing import StandardScaler
-    scaler = StandardScaler()
-    features = scaler.fit_transform(features)
-    features = features.reshape(len(features), num_period, input_dim)
-    features_tensor = torch.tensor(features, dtype=torch.float32)
-    labels_tensor = torch.tensor(labels, dtype=torch.float32)
-    from torch.utils.data import TensorDataset
-    all_data = TensorDataset(features_tensor, labels_tensor)
-    all_data_loader = DataLoader(all_data, batch_size=32, shuffle=False)
     feature_names = [f"Feature {i+1}" for i in range(input_dim)]
     time_points = [f"t-{i}" for i in range(num_period-1, -1, -1)]
-    return all_data_loader, feature_names, time_points
+    return test_data_loader, feature_names, time_points
 
 def plot_temporal_attention(attn, time_points, save_path):
     attn_1d = np.array(attn).squeeze()
@@ -322,86 +330,11 @@ def plot_interactive_network(G, output_file="interactive_network.html"):
     net.show_buttons(filter_=['physics'])
     net.show(output_file, notebook=False)
 
-def compute_ctga_cross_feature_cov_corr(model, data_loader, feature_names=None, time_points=None, output_dir=None, model_name='ctga'):
-    """
-    For CTGA: Compute and save cross-feature covariance and correlation matrices for each time step, averaged across layers, projected back to feature space.
-    Output as CSVs with block matrix structure (features x time).
-    """
-    import numpy as np
-    import pandas as pd
-    cov_matrices = []  # [layer][time][input_dim, input_dim]
-    corr_matrices = []
-    input_dim = model.input_dim
-    emb_dim = model.emb_dim
-    num_time = None
-    embedding_weight = model.embedding.weight.detach().cpu().numpy()  # [emb_dim, input_dim]
-    for inputs, _ in data_loader:
-        inputs = inputs.to(next(model.parameters()).device)
-        with torch.no_grad():
-            _ = model(inputs)
-            cross_feature_list = model.get_attention_weights().get('cross_feature', None)
-            if not isinstance(cross_feature_list, list):
-                print("[WARNING] CTGA cross_feature is not a list. Skipping.")
-                return
-            if num_time is None:
-                num_time = cross_feature_list[0].shape[1]
-            # For each layer
-            for layer_idx, layer_hidden in enumerate(cross_feature_list):
-                # layer_hidden: [batch, seq_len, emb_dim]
-                time_covs = []
-                time_corrs = []
-                for t in range(layer_hidden.shape[1]):
-                    features_t = layer_hidden[:, t, :].cpu().numpy()  # [batch, emb_dim]
-                    # Project to feature space: [batch, emb_dim] @ [emb_dim, input_dim] = [batch, input_dim]
-                    features_t_proj = features_t @ embedding_weight  # [batch, input_dim]
-                    if features_t_proj.shape[0] < 2:
-                        cov = np.full((input_dim, input_dim), np.nan)
-                        corr = np.full((input_dim, input_dim), np.nan)
-                    else:
-                        cov = np.cov(features_t_proj, rowvar=False)
-                        corr = np.corrcoef(features_t_proj, rowvar=False)
-                    time_covs.append(cov)
-                    time_corrs.append(corr)
-                cov_matrices.append(time_covs)
-                corr_matrices.append(time_corrs)
-        break  # Only need one batch for analysis
-    # Average across layers
-    cov_matrices = np.array(cov_matrices)  # [num_layers, num_time, input_dim, input_dim]
-    corr_matrices = np.array(corr_matrices)
-    avg_cov = np.nanmean(cov_matrices, axis=0)  # [num_time, input_dim, input_dim]
-    avg_corr = np.nanmean(corr_matrices, axis=0)
-    # Build block matrix for CSV
-    if feature_names is None:
-        feature_names = [f"Feature_{i+1}" for i in range(input_dim)]
-    if time_points is None:
-        time_points = [f"t-{i}" for i in range(num_time)]
-    labels = [f"{feature_names[f]}_{time_points[t]}" for t in range(num_time) for f in range(input_dim)]
-    block_cov = np.full((num_time * input_dim, num_time * input_dim), np.nan)
-    block_corr = np.full((num_time * input_dim, num_time * input_dim), np.nan)
-    for t in range(num_time):
-        for u in range(num_time):
-            row_start = t * input_dim
-            row_end = (t + 1) * input_dim
-            col_start = u * input_dim
-            col_end = (u + 1) * input_dim
-            if t >= u:  # Only fill lower triangle (causal half)
-                block_cov[row_start:row_end, col_start:col_end] = avg_cov[t]
-                block_corr[row_start:row_end, col_start:col_end] = avg_corr[t]
-            # else: leave as NaN
-    df_cov = pd.DataFrame(block_cov, index=labels, columns=labels)
-    df_corr = pd.DataFrame(block_corr, index=labels, columns=labels)
-    if output_dir is not None:
-        cov_path = os.path.join(output_dir, f"{model_name}_cross_feature_covariance.csv")
-        corr_path = os.path.join(output_dir, f"{model_name}_cross_feature_correlation.csv")
-        df_cov.to_csv(cov_path)
-        df_corr.to_csv(corr_path)
-        print(f"[INFO] CTGA cross-feature covariance CSV saved to: {cov_path}")
-        print(f"[INFO] CTGA cross-feature correlation CSV saved to: {corr_path}")
-    return df_cov, df_corr
+
 
 def main():
     parser = argparse.ArgumentParser(description='Unified Model Analysis Script')
-    parser.add_argument('--model', type=str, required=True, help='Model type: retain, tfcam, hcta, enhanced_tfcam, mstca, ctga')
+    parser.add_argument('--model', type=str, required=True, help='Model type: retain, coi, bilstm')
     parser.add_argument('--checkpoint', type=str, required=False, help='Path to best model checkpoint (if not provided, will use Outputs/saved_models/{model}_best_model_hypersearch.pt)')
     parser.add_argument('--config', type=str, required=False, help='Path to config YAML (if not provided, will use config/{model}_config.yaml)')
     parser.add_argument('--output', type=str, default='./visualizations/unified_analysis', help='Output directory')
@@ -434,6 +367,49 @@ def main():
 
     # Load feature names from config
     feature_names = load_feature_names()
+
+    # Get a batch for analysis
+    all_preds = []
+    all_labels = []
+    model.eval()
+    with torch.no_grad():
+        for inputs, labels in data_loader:
+            inputs = inputs.to(device)
+            labels = labels.to(device)
+            outputs = model(inputs)
+            if outputs.shape[-1] == 1 or len(outputs.shape) == 1:
+                probs = torch.sigmoid(outputs).squeeze().cpu().numpy()
+                preds = (probs > 0.5).astype(int)
+            else:
+                probs = torch.softmax(outputs, dim=-1).cpu().numpy()
+                preds = np.argmax(probs, axis=-1)
+            all_preds.append(preds)
+            all_labels.append(labels.cpu().numpy())
+    all_preds = np.concatenate(all_preds)
+    all_labels = np.concatenate(all_labels)
+
+    from sklearn.metrics import f1_score, roc_auc_score, accuracy_score, precision_score
+    f1 = f1_score(all_labels, all_preds)
+    try:
+        auroc = roc_auc_score(all_labels, all_preds)
+    except Exception:
+        auroc = float('nan')
+    acc = accuracy_score(all_labels, all_preds)
+    prec = precision_score(all_labels, all_preds)
+    print(f"[TEST] F1: {f1:.4f}, AUROC: {auroc:.4f}, Accuracy: {acc:.4f}, Precision: {prec:.4f}")
+
+    # Save metrics to YAML
+    import yaml
+    metrics = {
+        'f1': float(f1),
+        'auroc': float(auroc),
+        'accuracy': float(acc),
+        'precision': float(prec)
+    }
+    metrics_path = os.path.join(args.output, 'metrics_test.yaml')
+    with open(metrics_path, 'w') as f:
+        yaml.dump(metrics, f)
+    print(f"[TEST] Metrics saved to: {metrics_path}")
 
     # Get a batch for analysis
     inputs, _ = next(iter(data_loader))
@@ -480,10 +456,7 @@ def main():
     else:
         print("No cross-temporal-feature analysis available for this model.")
 
-    # CTGA-specific cross-feature analysis
-    if args.model.lower() == 'ctga':
-        print("[INFO] Running CTGA cross-feature covariance and correlation analysis...")
-        compute_ctga_cross_feature_cov_corr(model, data_loader, feature_names, time_points, args.output, model_name=args.model.lower())
+
 
     # Save interactive network
     if df_influence is not None and _has_pyvis:

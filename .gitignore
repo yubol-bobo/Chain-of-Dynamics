@@ -1,4 +1,96 @@
-Outputs/
-ckd_data/
+# Python
 __pycache__/
-visualizations/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+share/python-wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# PyTorch
+*.pth
+*.pt
+
+# Data directories (private data not to be shared)
+data/ckd/
+data/mimic-iv/
+ckd_data/
+mimic-iv-3.1/
+*.zip
+*.csv
+*.npy
+
+# Results and outputs
+Outputs/
+results/*/
+!results/.gitkeep
+logs/
+checkpoints/
+
+# Include assets for README visualization
+!assets/
+!assets/images/
+
+# Include demo files and sample data (Colab only)
+!demos/
+!demos/colab/
+!demos/colab/sample_influence_matrix.csv
+!demos/README.md
+
+# Jupyter Notebooks
+.ipynb_checkpoints
+
+# Environment
+.env
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
+
+# IDEs
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# LaTeX
+*.aux
+*.bbl
+*.blg
+*.fdb_latexmk
+*.fls
+*.log
+*.out
+*.synctex.gz
+*.toc
+
+# Misc
+*.backup
+*.tmp

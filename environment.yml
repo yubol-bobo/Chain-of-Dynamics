@@ -1,0 +1,22 @@
+name: coi
+channels:
+  - pytorch
+  - conda-forge
+  - defaults
+dependencies:
+  - python=3.11.11
+  - numpy=1.26.4
+  - pandas=2.2.3
+  - scikit-learn=1.6.1
+  - matplotlib=3.10.1
+  - seaborn=0.13.2
+  - tqdm=4.67.1
+  - pyyaml=6.0.2
+  - imbalanced-learn=0.13.0
+  - joblib=1.4.2
+  - threadpoolctl=3.6.0
+  - pip
+  - pip:
+    - torch==2.2.2
+    - torchvision==0.17.2
+    - torchaudio==2.2.2 

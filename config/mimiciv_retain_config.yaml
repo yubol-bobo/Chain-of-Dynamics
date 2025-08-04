@@ -1,0 +1,40 @@
+data:
+  processed_path: mimic-iv-3.1/processed/X_mimiciv.npy
+  label_path: mimic-iv-3.1/processed/y_mimiciv.npy
+  month_count: 48
+
+hyperparameters:
+  batch_size: [16, 32, 64]
+  dropout: [0.1, 0.2, 0.3]
+  emb_dim: [32, 64, 128]
+  hidden_dim: [64, 128, 256]
+  learning_rate: [0.0001, 0.001, 0.01]
+  num_heads: [4, 8, 16]
+  num_layers: [2, 3, 4]
+
+model:
+  type: retain
+  input_dim: 15
+  emb_dim: 64
+  hidden_dim: 128
+  num_heads: 8
+  num_layers: 3
+  output_dim: 1
+  dropout: 0.2
+  learning_rate: 0.001
+  batch_size: 32
+  n_epochs: 1000
+  patience: 7
+
+train:
+  batch_size: 32
+  epochs: 1000
+  lr: 0.001
+  seed: 42
+
+paths:
+  results_path: ./Outputs/saved_models/
+  save_path: ./Outputs/saved_models/
+
+tuning:
+  n_epochs: 20 

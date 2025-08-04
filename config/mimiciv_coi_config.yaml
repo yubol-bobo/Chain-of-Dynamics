@@ -1,12 +1,13 @@
 data:
-  month_count: 24
-  processed_path: ./ckd_data/processed/data_for_modeling_corrected.csv
-  raw_path: ./ckd_data/raw/
+  processed_x_path: ./mimic-iv-3.1/processed/X_mimiciv_parallel.npy
+  processed_y_path: ./mimic-iv-3.1/processed/y_mimiciv_parallel.npy
+  raw_path: ./mimic-iv-3.1/
+  
 hyperparameters:
   batch_size:
-    - 16
     - 32
     - 64
+    - 128
   dropout:
     - 0.1
     - 0.2
@@ -29,26 +30,28 @@ hyperparameters:
     - 16
   num_layers:
     - 2
-    - 3
     - 4
+    - 6
+
 model:
-  type: 'retain'
-  input_dim: 37
+  type: coi
+  input_dim: 15
   emb_dim: 64
   hidden_dim: 128
   num_heads: 8
-  num_layers: 3
+  num_layers: 4
   output_dim: 1
   dropout: 0.2
   learning_rate: 0.001
-  batch_size: 32
-  n_epochs: 500
-  patience: 7
+  batch_size: 64
+  n_epochs: 200
+  patience: 10
+  max_seq_len: 48
+  alpha_init: 0.8
+
 paths:
   results_path: ./Outputs/saved_models/
   save_path: ./Outputs/saved_models/
 
-timestamp: '20250723_170000'
-
 tuning:
-  n_epochs: 500 
+  n_epochs: 200 
