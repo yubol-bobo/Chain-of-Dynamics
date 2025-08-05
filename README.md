@@ -66,7 +66,7 @@ Chain-of-Influence (CoI) addresses the critical gap in clinical predictive model
 
 ### Interactive Demo
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/your-username/your-repo-name/blob/main/demos/colab/demo.ipynb)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](#)
 
 Experience Chain-of-Influence instantly in your browser with our comprehensive interactive demonstration:
 
@@ -86,7 +86,7 @@ For researchers and developers who want to train models or reproduce results:
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/your-username/chain-of-influence.git
+   git clone <repository-url>
    cd chain-of-influence
    ```
 
@@ -104,7 +104,7 @@ For researchers and developers who want to train models or reproduce results:
 **Data Setup:**
 
 Follow the instructions in [`data/README.md`](data/README.md) to obtain and organize the datasets:
-- **CKD Dataset**: Private longitudinal clinical data (contact authors for access)
+- **CKD Dataset**: Private longitudinal clinical data (access restricted for privacy)
 - **MIMIC-IV v3.1**: Public critical care database (requires PhysioNet credentialed access)
 
 **Training Models:**
@@ -210,10 +210,9 @@ If you use this code or method in your research, please cite:
 ```bibtex
 @article{chain_of_influence_2024,
   title={Chain-of-Influence: Tracing Interdependencies Across Time and Features in Clinical Predictive Modeling},
-  author={[Author Names]},
-  journal={[Conference/Journal Name]},
-  year={2024},
-  url={https://github.com/your-username/chain-of-influence}
+  author={Anonymous},
+  journal={AAAI Conference on Artificial Intelligence},
+  year={2024}
 }
 ```
 
@@ -239,12 +238,8 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Contact
 
-For questions about the code, methodology, or data access procedures:
-
-- **Primary Contact**: [Author Email]
-- **Institution**: [Institution Name]
-- **Project Page**: [Optional: Project website]
+For questions about the code, methodology, or data access procedures, please refer to the repository issues or the anonymous submission guidelines.
 
 ---
 
-**Data Access Note**: The CKD dataset contains private patient information and cannot be shared publicly. Researchers interested in collaboration or data access should contact the authors directly to discuss data sharing agreements and IRB requirements.
+**Data Access Note**: The CKD dataset contains private patient information and cannot be shared publicly. Data sharing is subject to appropriate institutional agreements and IRB requirements.

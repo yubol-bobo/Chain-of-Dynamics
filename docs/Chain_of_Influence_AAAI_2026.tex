@@ -29,9 +29,7 @@
 Clinical predictive modeling faces the challenge of capturing complex interdependencies between features and their temporal evolution. Traditional approaches often treat features independently or use simple temporal aggregation, missing the intricate chain of influences that drive clinical outcomes. We introduce Chain-of-Influence (CoI), a novel interpretable deep learning framework that explicitly models how features influence each other across time through a multi-level attention mechanism. Our approach combines temporal attention with cross-feature interaction modeling to trace the propagation of feature influences throughout the patient timeline. Chain-of-Influence employs a dual-attention architecture: temporal attention identifies critical time points, while cross-feature attention captures how changes in one feature affect others at different time steps. The model provides comprehensive interpretability through contribution analysis, revealing both the temporal importance of clinical events and the inter-feature influence patterns that drive predictions. Crucially, our framework enables tracing how influence and contribution propagate from any feature at any time point to the final predictions, providing unprecedented transparency into the decision-making process. We evaluate our framework on two comprehensive clinical datasets: a private chronic kidney disease dataset and MIMIC-IV, demonstrating superior performance compared to state-of-the-art methods while providing clinically meaningful insights into disease progression patterns. Our results show that Chain-of-Influence achieves strong performance across both datasets, including perfect precision (1.000) on MIMIC-IV and consistent improvements on CKD data (up to 6.2\% F1-score enhancement), while offering unprecedented transparency into the temporal and cross-feature dependencies that inform clinical decision-making.
 \end{abstract}
 
-\begin{links}
-    \link{Code}{https://anonymous.4open.science/r/6F7E1530}
-\end{links}
+% Links removed for anonymous submission
 
 \section{Introduction}
 

@@ -4,7 +4,7 @@ This directory contains interactive demonstrations of the Chain-of-Influence (Co
 
 ## 📓 Google Colab Interactive Demo
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/your-username/your-repo-name/blob/main/demos/colab/demo.ipynb)
+[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](#)
 
 ### `colab/demo.ipynb` - Complete Interactive Experience
 
@@ -50,7 +50,7 @@ A comprehensive Google Colab notebook that provides:
 
 ### **One-Click Launch - No Installation Required!**
 
-1. **Click the "Open in Colab" badge above** [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](https://colab.research.google.com/github/your-username/your-repo-name/blob/main/demos/colab/demo.ipynb)
+1. **Click the "Open in Colab" badge above** [![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](#)
 2. **Upload your influence matrix** file (CSV/Excel format) or use our sample data
 3. **Set your OpenAI API key** in Colab secrets as `OPENAI_API_KEY` (optional - for AI analysis)
 4. **Run all cells** to generate the interactive dashboard
@@ -141,7 +141,7 @@ If you use this demo in your research, please cite:
 ```bibtex
 @article{chain_of_influence_2024,
   title={Chain-of-Influence: Tracing Interdependencies Across Time and Features in Clinical Predictive Modeling},
-  author={Your Name},
+  author={Anonymous},
   journal={AAAI Conference on Artificial Intelligence},
   year={2024}
 }
