@@ -185,9 +185,6 @@ We welcome contributions from the research community. Please:
 
 For bug reports or feature requests, please open an issue with detailed information.
 
-## License
-
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for complete details.
 
 ## Acknowledgments
 
@@ -197,7 +194,4 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Contact
 
-Available upon acceptance
----
-
-**Data Access Note**: The CKD dataset contains private patient information and cannot be shared publicly. Data sharing is subject to appropriate institutional agreements and IRB requirements.
+- Available upon acceptance
