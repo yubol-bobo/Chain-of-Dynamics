@@ -168,10 +168,11 @@ Strong recurrent neural network baseline:
 
 ### Key Findings
 
-- **Consistent Performance Gains**: CoI demonstrates superior performance across all evaluation metrics compared to both baseline models
+- **Superior AUROC Performance**: CoI achieves 0.950 AUROC, outperforming both RETAIN and BiLSTM (both 0.930) by 2.0 percentage points
+- **Best F1-Score**: CoI demonstrates the highest F1-score (0.690), with improvements of 3.0 points over RETAIN (0.660) and 4.0 points over BiLSTM (0.650)
+- **Highest Accuracy**: CoI achieves 94.0% accuracy, surpassing RETAIN (92.0%) by 2.0 points and BiLSTM (91.0%) by 3.0 points
+- **Improved Precision**: CoI shows the best precision (0.790), outperforming RETAIN (0.760) by 3.0 points and BiLSTM (0.750) by 4.0 points
 - **Clinical Interpretability**: The model successfully identifies clinically meaningful influence chains, such as eGFR → Hemoglobin → Healthcare utilization patterns
-- **Cross-Domain Validation**: Strong performance demonstrated on both chronic disease progression (CKD) and acute care prediction (MIMIC-IV mortality) tasks
-- **High Precision**: Achieves perfect precision (1.000) on MIMIC-IV in-hospital mortality prediction
 
 
 
