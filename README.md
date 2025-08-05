@@ -176,42 +176,7 @@ Strong recurrent neural network baseline:
 - **Cross-Domain Validation**: Strong performance demonstrated on both chronic disease progression (CKD) and acute care prediction (MIMIC-IV mortality) tasks
 - **High Precision**: Achieves perfect precision (1.000) on MIMIC-IV in-hospital mortality prediction
 
-## Technical Details
 
-### Influence Chain Computation
-
-The Chain-of-Influence mechanism quantifies how features influence each other across time using the formulation:
-
-```
-I(t,i; t',j) = C[t,i] × A[t,t'] × C[t',j]
-```
-
-Where:
-- `C[t,i]`: Local contribution of feature i at time t
-- `A[t,t']`: Temporal attention weight from time t to time t'
-- `I(t,i; t',j)`: Influence of feature i at time t on feature j at time t'
-
-This allows for comprehensive analysis of how clinical features interact across temporal sequences.
-
-### Temporal SMOTE (TSMOTE)
-
-Novel data-level balancing technique specifically designed for clinical time series:
-- Preserves temporal structure during synthetic sample generation
-- Incorporates realistic temporal noise to maintain physiological plausibility
-- Demonstrates significant improvement in minority class detection (F1 improvement: +0.178)
-
-## Citation
-
-If you use this code or method in your research, please cite:
-
-```bibtex
-@article{chain_of_influence_2024,
-  title={Chain-of-Influence: Tracing Interdependencies Across Time and Features in Clinical Predictive Modeling},
-  author={Anonymous},
-  journal={AAAI Conference on Artificial Intelligence},
-  year={2024}
-}
-```
 
 ## Contributing
 
@@ -235,8 +200,7 @@ This project is licensed under the MIT License - see the [LICENSE](LICENSE) file
 
 ## Contact
 
-For questions about the code, methodology, or data access procedures, please refer to the repository issues or the anonymous submission guidelines.
-
+Available upon acceptance
 ---
 
 **Data Access Note**: The CKD dataset contains private patient information and cannot be shared publicly. Data sharing is subject to appropriate institutional agreements and IRB requirements.
