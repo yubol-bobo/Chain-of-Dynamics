@@ -11,7 +11,7 @@ A novel interpretable deep learning framework for clinical time series predictio
 Chain-of-Influence (CoI) addresses the critical gap in clinical predictive modeling by capturing how features influence each other across time. Unlike traditional approaches that treat features independently, CoI provides unprecedented transparency into the complex chains of influence that drive clinical outcomes.
 
 <div align="center">
-  <img src="assets/images/influence_network.png" alt="Chain-of-Influence Network Visualization" width="800"/>
+  <img src="assets/influence_network.png" alt="Chain-of-Influence Network Visualization" width="800"/>
   <p><em>Chain-of-Influence network showing temporal-feature interdependencies in CKD progression. Node size reflects feature importance, arrow thickness indicates influence strength, and colors distinguish influence types.</em></p>
 </div>
 
@@ -46,10 +46,9 @@ Chain-of-Influence (CoI) addresses the critical gap in clinical predictive model
 │   ├── bilstm_config.yaml       # BiLSTM model configuration
 │   ├── mimiciv_*.yaml          # MIMIC-IV specific configs
 │   └── feature_names.yaml      # Feature specifications
-├── assets/                      # Visual assets
-│   └── images/                  # Figures and visualizations
-│       ├── influence_network.png # Chain-of-Influence network
-│       └── temporal_attention_comparison.png
+├── assets/                      # Visual assets and demos
+│   ├── Chain_of_Influence_demo.ipynb # Interactive demonstration notebook
+│   └── influence_network.png    # Chain-of-Influence network visualization
 ├── demos/                       # Interactive demonstrations
 │   ├── colab/                   # Original Colab notebooks  
 │   │   ├── demo.ipynb          # Complete interactive demo
