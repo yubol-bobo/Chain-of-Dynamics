@@ -20,7 +20,7 @@ Chain-of-Influence (CoI) addresses the critical gap in clinical predictive model
 - **Explicit Influence Modeling**: Traces how feature A at time t affects feature B at time t+k, and finally to predictions, showing how effects propagate as a chain of influence
 - **Multi-level Attention**: Combines temporal attention with cross-feature interactions
 - **Comprehensive Interpretability**: Provides feature importance and influence chain analysis
-- **Interactive Demonstration**: Explore the model instantly with our Google Colab notebook
+- **Interactive Demonstration**: Explore the model with our comprehensive Jupyter notebook
 - **Clinical Validation**: Evaluated on chronic CKD progression prediction and acute ICU mortality prediction tasks
 
 ## Repository Structure
@@ -51,7 +51,7 @@ Chain-of-Influence (CoI) addresses the critical gap in clinical predictive model
 │       ├── influence_network.png # Chain-of-Influence network
 │       └── temporal_attention_comparison.png
 ├── demos/                       # Interactive demonstrations
-│   ├── colab/                   # Google Colab notebooks  
+│   ├── colab/                   # Original Colab notebooks  
 │   │   ├── demo.ipynb          # Complete interactive demo
 │   │   └── sample_influence_matrix.csv # Test data
 │   └── README.md               # Demo documentation
@@ -66,9 +66,7 @@ Chain-of-Influence (CoI) addresses the critical gap in clinical predictive model
 
 ### Interactive Demo
 
-[![Open In Colab](https://colab.research.google.com/assets/colab-badge.svg)](#)
-
-Experience Chain-of-Influence instantly in your browser with our comprehensive interactive demonstration:
+Experience Chain-of-Influence with our comprehensive interactive demonstration notebook: [`assets/Chain_of_Influence_demo.ipynb`](assets/Chain_of_Influence_demo.ipynb)
 
 - **File Upload Interface**: Drag-and-drop support for influence matrices (CSV/Excel/JSON)
 - **Interactive Network Visualization**: Physics-based layouts with real-time parameter adjustment
