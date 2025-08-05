@@ -46,14 +46,11 @@ Chain-of-Influence (CoI) addresses the critical gap in clinical predictive model
 │   ├── bilstm_config.yaml       # BiLSTM model configuration
 │   ├── mimiciv_*.yaml          # MIMIC-IV specific configs
 │   └── feature_names.yaml      # Feature specifications
-├── assets/                      # Visual assets and demos
+├── assets/                      # Visual assets and interactive demonstrations
 │   ├── Chain_of_Influence_demo.ipynb # Interactive demonstration notebook
+│   ├── sample_influence_matrix.csv # Sample test data for demos
+│   ├── README.md               # Demo documentation
 │   └── influence_network.png    # Chain-of-Influence network visualization
-├── demos/                       # Interactive demonstrations
-│   ├── colab/                   # Original Colab notebooks  
-│   │   ├── demo.ipynb          # Complete interactive demo
-│   │   └── sample_influence_matrix.csv # Test data
-│   └── README.md               # Demo documentation
 ├── data/                        # Data directory (see data/README.md)
 │   └── README.md               # Data acquisition instructions
 └── results/                     # Experimental results
