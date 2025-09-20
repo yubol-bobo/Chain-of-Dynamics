@@ -1,7 +1,7 @@
 data:
-  processed_x_path: ./mimic-iv-3.1/processed/X_mimiciv_parallel.npy
-  processed_y_path: ./mimic-iv-3.1/processed/y_mimiciv_parallel.npy
-  raw_path: ./mimic-iv-3.1/
+  processed_path: ./data/mimic-iv-3.1/processed/X_mimiciv_parallel.npy
+  label_path: ./data/mimic-iv-3.1/processed/y_mimiciv_parallel.npy
+  raw_path: ./data/mimic-iv-3.1/
   
 hyperparameters:
   batch_size:
@@ -38,8 +38,8 @@ model:
   patience: 10
 
 paths:
-  results_path: ./Outputs/saved_models/
-  save_path: ./Outputs/saved_models/
+  results_path: ./results/mimic/
+  save_path: ./results/mimic/
 
 tuning:
   n_epochs: 200 

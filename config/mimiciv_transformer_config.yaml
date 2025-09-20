@@ -2,7 +2,7 @@ data:
   processed_path: ./data/mimic-iv-3.1/processed/X_mimiciv_parallel.npy
   label_path: ./data/mimic-iv-3.1/processed/y_mimiciv_parallel.npy
   raw_path: ./data/mimic-iv-3.1/
-  
+
 hyperparameters:
   batch_size:
     - 32
@@ -13,13 +13,13 @@ hyperparameters:
     - 0.2
     - 0.3
   emb_dim:
-    - 32
-    - 64
-    - 128
-  hidden_dim:
     - 64
     - 128
     - 256
+  hidden_dim:
+    - 256
+    - 512
+    - 1024
   learning_rate:
     - 0.0001
     - 0.001
@@ -34,10 +34,10 @@ hyperparameters:
     - 6
 
 model:
-  type: coi
+  type: transformer
   input_dim: 15
-  emb_dim: 64
-  hidden_dim: 128
+  emb_dim: 128
+  hidden_dim: 512
   num_heads: 8
   num_layers: 4
   output_dim: 1
@@ -47,11 +47,10 @@ model:
   n_epochs: 200
   patience: 10
   max_seq_len: 48
-  alpha_init: 0.8
 
 paths:
   results_path: ./results/mimic/
   save_path: ./results/mimic/
 
 tuning:
-  n_epochs: 200 
+  n_epochs: 200

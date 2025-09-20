@@ -23,6 +23,7 @@ from sklearn.metrics import roc_auc_score, recall_score, accuracy_score, precisi
 from datetime import datetime
 import itertools
 import random
+from collections import Counter
 import matplotlib.pyplot as plt
 import seaborn as sns
 from sklearn.experimental import enable_iterative_imputer  # noqa
@@ -35,6 +36,7 @@ from src.data.tsmote import TSMOTE
 from src.models.retain import RETAIN
 from src.models.coi import CoI
 from src.models.bilstm import BiLSTM
+from src.models.transformer import TransformerModel
 
 def get_shape(x):
     if hasattr(x, 'shape'):
@@ -62,16 +64,20 @@ def update_config_with_timestamp(config):
     """Update config with current timestamp"""
     timestamp = generate_timestamp()
     config['timestamp'] = timestamp
-    print(f"✅ Generated timestamp: {timestamp}")
+    print(f"Generated timestamp: {timestamp}")
     return config
 
 def get_best_device():
     """Get the best available device (CUDA, MPS, or CPU)"""
     if torch.cuda.is_available():
+        device_name = torch.cuda.get_device_name(0)
+        print(f"CUDA available! Using GPU: {device_name}")
         return 'cuda'
     elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+        print("MPS available! Using Apple Silicon GPU")
         return 'mps'
     else:
+        print("GPU not available. Using CPU")
         return 'cpu'
 
 def prepare_data(config):
@@ -100,7 +106,6 @@ def prepare_data(config):
             print("[INFO] Dropping all-NaN features at indices:", drop_indices)
             features = features[..., ~all_nan_features]
         # Split the dataset into train, validation, and test sets
-        from sklearn.model_selection import train_test_split
         X_train, X_temp, y_train, y_temp = train_test_split(
             features, labels, test_size=0.4, stratify=labels, random_state=42
         )
@@ -110,7 +115,6 @@ def prepare_data(config):
         # MICE Imputation and Normalization (fit only on train, transform all)
         from sklearn.experimental import enable_iterative_imputer
         from sklearn.impute import IterativeImputer
-        from sklearn.preprocessing import StandardScaler
         n_patients_train, timesteps, n_features = X_train.shape
         n_patients_val, _, _ = X_val.shape
         n_patients_test, _, _ = X_test.shape
@@ -148,12 +152,9 @@ def prepare_data(config):
         np.save(os.path.join(results_path, f"{model_type}_X_test_imputed.npy"), X_test)
         np.save(os.path.join(results_path, f"{model_type}_y_test_imputed.npy"), y_test)
         # Apply TSMOTE for data balancing on training set
-        from utils.tsmote import TSMOTE
         tsmote = TSMOTE(random_state=42, k_neighbors=5)
         X_train, y_train = tsmote.fit_resample(X_train, y_train)
         # Compute class weights from resampled training labels
-        
-        from collections import Counter
         y_train_flat = y_train if y_train.ndim == 1 else y_train.argmax(axis=1)
         classes = np.unique(y_train_flat)
         class_counts = Counter(y_train_flat)
@@ -163,12 +164,9 @@ def prepare_data(config):
         max_weight = max(class_weights.values())
         class_weights = {cls: w/max_weight for cls, w in class_weights.items()}
         print(f"[INFO] Using class weights in loss: {class_weights}")
-        import torch
         class_weights_tensor = torch.tensor([class_weights[cls] for cls in sorted(class_weights.keys())], dtype=torch.float32)
         # Save class_weights_tensor in config for use in training
         config['class_weights_tensor'] = class_weights_tensor
-        import torch
-        from torch.utils.data import TensorDataset
         def to_tensor(x):
             if not isinstance(x, np.ndarray):
                 x = np.array(x)
@@ -186,16 +184,16 @@ def prepare_data(config):
     else:
         data = pd.read_csv(processed_path).fillna(0)
         shape_0 = data.shape[0]
-        print(f"✅ Data loaded: {data.shape}")
-        
+        print(f"Data loaded: {data.shape}")
+
         input_dim = config['model']['input_dim']
         num_period = config['data']['month_count'] // 3
-        print(f"✅ Input dim: {input_dim}, Num periods: {num_period}")
-        
+        print(f"Input dim: {input_dim}, Num periods: {num_period}")
+
         # Extract features and labels
         features = data.drop(columns=['TMA_Acct', 'ESRD'])
         labels = data['ESRD']
-        print(f"✅ Features shape: {features.shape}, Labels shape: {labels.shape}")
+        print(f"Features shape: {features.shape}, Labels shape: {labels.shape}")
         
         # Clean features: replace NaN and Inf with 0.0
         features = np.nan_to_num(features, nan=0.0, posinf=0.0, neginf=0.0)
@@ -231,7 +229,7 @@ def prepare_data(config):
         y_val = to_tensor(y_val)
         y_test = to_tensor(y_test)
 
-        print(f"✅ Data split - Train: {get_shape(X_train)}, Val: {get_shape(X_val)}, Test: {get_shape(X_test)}")  
+        print(f"Data split - Train: {get_shape(X_train)}, Val: {get_shape(X_val)}, Test: {get_shape(X_test)}")  
         
         # Create Tensor datasets
         train_data = TensorDataset(X_train, y_train)
@@ -303,8 +301,19 @@ def create_model(config):
             output_dim=config['model']['output_dim'],
             dropout=config['model'].get('dropout', 0.2)
         )
+    elif model_type.lower() == 'transformer':
+        model = TransformerModel(
+            input_dim=config['model']['input_dim'],
+            emb_dim=config['model']['emb_dim'],
+            hidden_dim=config['model']['hidden_dim'],
+            num_heads=config['model']['num_heads'],
+            num_layers=config['model']['num_layers'],
+            output_dim=config['model']['output_dim'],
+            dropout=config['model'].get('dropout', 0.2),
+            max_seq_len=config['model'].get('max_seq_len', 50)
+        )
     else:
-        raise ValueError(f"Unknown model type: {model_type}. Supported types: retain, coi, bilstm")
+        raise ValueError(f"Unknown model type: {model_type}. Supported types: retain, coi, bilstm, transformer")
     
     return model
 
@@ -414,7 +423,7 @@ def train_model(model, train_loader, val_loader, criterion, optimizer, config, l
         else:
             trigger_times += 1
             if trigger_times >= patience:
-                print("🛑 Early stopping triggered (validation loss not improving).")
+                print("Early stopping triggered (validation loss not improving).")
                 break
                 
     return metrics
@@ -450,8 +459,18 @@ def hyperparameter_search(config, train_data, val_data, test_data, n_combination
             'batch_size': [64, 128],
             'dropout': [0, 0.2, 0.4]
         }
+    elif model_type.lower() == 'transformer':
+        hyperparameters = {
+            'emb_dim': [64, 128, 256],
+            'hidden_dim': [256, 512, 1024],
+            'num_heads': [4, 8, 16],
+            'num_layers': [2, 4, 6],
+            'learning_rate': [0.001, 0.0001],
+            'batch_size': [32, 64, 128],
+            'dropout': [0.1, 0.2, 0.3]
+        }
     else:
-        raise ValueError(f"Unknown model type: {model_type}. Supported types: retain, coi, bilstm")
+        raise ValueError(f"Unknown model type: {model_type}. Supported types: retain, coi, bilstm, transformer")
     param_names = list(hyperparameters.keys())
     param_values = list(hyperparameters.values())
     all_combinations = list(itertools.product(*param_values))
@@ -459,8 +478,8 @@ def hyperparameter_search(config, train_data, val_data, test_data, n_combination
         all_combinations = random.sample(all_combinations, n_combinations)
     best_val_loss, best_f1, best_auc, best_hyperparams, best_model_path = float('inf'), -np.inf, -np.inf, None, None
     criterion = nn.BCEWithLogitsLoss()
-    print(f"🔍 Starting hyperparameter search for {model_type.upper()}...")
-    print(f"📊 Testing {len(all_combinations)} combinations (full training each)...")
+    print(f"Starting hyperparameter search for {model_type.upper()}...")
+    print(f"Testing {len(all_combinations)} combinations (full training each)...")
     for i, params in enumerate(tqdm(all_combinations, desc="Hyperparameter Search")):
         params_dict = dict(zip(param_names, params))
         config['model'].update(params_dict)
@@ -488,7 +507,7 @@ def hyperparameter_search(config, train_data, val_data, test_data, n_combination
                 'model_state_dict': model.state_dict(),
                 'hyperparams': config['model']
             }, candidate_model_path)
-            print(f"🎯 New best model (Val Loss: {best_val_loss:.4f}, F1: {best_f1:.4f}, AUC: {best_auc:.4f}) with params: {params_dict}")
+            print(f"New best model (Val Loss: {best_val_loss:.4f}, F1: {best_f1:.4f}, AUC: {best_auc:.4f}) with params: {params_dict}")
     # Save summary file
     import yaml
     summary = {
@@ -502,7 +521,7 @@ def hyperparameter_search(config, train_data, val_data, test_data, n_combination
     summary_path = os.path.join(save_path, f"{model_type}_hypersearch_summary.yaml")
     with open(summary_path, "w") as f:
         yaml.dump(summary, f)
-    print(f"✅ Hyperparameter search summary saved to: {summary_path}")
+    print(f"Hyperparameter search summary saved to: {summary_path}")
     return best_hyperparams, best_f1, best_auc, best_model_path
 
 def save_training_results(metrics, config):
@@ -525,7 +544,7 @@ def save_training_results(metrics, config):
     with open(metrics_path, 'w') as f:
         yaml.dump(metrics_serializable, f)
     
-    print(f"✅ Training metrics saved to: {metrics_path}")
+    print(f"Training metrics saved to: {metrics_path}")
 
 def save_best_params(best_params, config, timestamp):
     """Save best hyperparameters"""
@@ -535,7 +554,7 @@ def save_best_params(best_params, config, timestamp):
     with open(best_params_path, 'w') as f:
         yaml.dump(best_params, f)
     
-    print(f"✅ Best hyperparameters saved to: {best_params_path}")
+    print(f"Best hyperparameters saved to: {best_params_path}")
 
 def plot_training_metrics(metrics, config):
     """Plot training metrics"""
@@ -587,26 +606,31 @@ def plot_training_metrics(metrics, config):
     plt.savefig(plot_path, dpi=300, bbox_inches='tight')
     plt.close()
     
-    print(f"✅ Training plots saved to: {plot_path}")
+    print(f"Training plots saved to: {plot_path}")
 
 def main():
     import argparse
     import os
     # Parse command line arguments
     parser = argparse.ArgumentParser(description='Unified Training Script for Clinical Models')
-    parser.add_argument('--model', type=str, required=True, help='Model type: retain, coi, bilstm')
-    parser.add_argument('--hyperparameter-search', action='store_true', 
+    parser.add_argument('--model', type=str, required=True, help='Model type: retain, coi, bilstm, transformer')
+    parser.add_argument('--dataset', type=str, choices=['ckd', 'mimic'], default='ckd',
+                       help='Dataset to use: ckd or mimic (default: ckd)')
+    parser.add_argument('--hyperparameter-search', action='store_true',
                        help='Enable hyperparameter search')
-    parser.add_argument('--n-combinations', type=int, default=10,
+    parser.add_argument('--n-combinations', type=int, default=300,
                        help='Number of hyperparameter combinations to try')
     parser.add_argument('--config', type=str, required=False,
-                       help='Path to configuration YAML file (if not provided, will use config/{model}_config.yaml)')
+                       help='Path to configuration YAML file (overrides --dataset flag)')
     args = parser.parse_args()
 
     # Auto-determine config if not provided
     if args.config is None:
-        args.config = f"config/{args.model.lower()}_config.yaml"
-        print(f"[INFO] Using config: {args.config}")
+        if args.dataset == 'mimic':
+            args.config = f"config/mimiciv_{args.model.lower()}_config.yaml"
+        else:
+            args.config = f"config/{args.model.lower()}_config.yaml"
+        print(f"[INFO] Using config: {args.config} for {args.dataset.upper()} dataset")
 
     # Load configuration
     config_path = args.config
@@ -619,9 +643,9 @@ def main():
     if os.path.exists(best_params_path) and not args.hyperparameter_search:
         best_params = load_best_params(best_params_path)
         config['model'].update(best_params)
-        print("✅ Loaded best hyperparameters.")
+        print("Loaded best hyperparameters.")
     else:
-        print(f"⚠️ Best hyperparameters file not found or hyperparameter search enabled. Using default parameters from {config_path}.")
+        print(f"Best hyperparameters file not found or hyperparameter search enabled. Using default parameters from {config_path}.")
 
     config = update_config_with_timestamp(config)
     config['model']['device'] = get_best_device()
@@ -629,24 +653,24 @@ def main():
 
     # Prepare data
     train_data, val_data, test_data = prepare_data(config)
-    print("✅ Data prepared.")
+    print("Data prepared.")
     
     best_model_path = None
     if args.hyperparameter_search:
         # Perform hyperparameter search
-        print(f"🔍 Starting hyperparameter search with {args.n_combinations} combinations...")
+        print(f"Starting hyperparameter search with {args.n_combinations} combinations...")
         best_params, best_f1, best_auc, best_model_path = hyperparameter_search(
-            config, train_data, val_data, test_data, 
+            config, train_data, val_data, test_data,
             n_combinations=args.n_combinations
         )
-        
+
         if best_params:
             # Update config with best parameters
             config['model'].update(best_params)
-            print(f"✅ Best F1: {best_f1:.4f}")
-            print(f"✅ Best AUC: {best_auc:.4f}")
-            print(f"✅ Best params: {best_params}")
-            print(f"✅ Best model saved at: {best_model_path}")
+            print(f"Best F1: {best_f1:.4f}")
+            print(f"Best AUC: {best_auc:.4f}")
+            print(f"Best params: {best_params}")
+            print(f"Best model saved at: {best_model_path}")
             save_best_params(best_params, config, config['timestamp'])
         # return  # 只做超参数搜索和保存，不再重复训练
 
@@ -679,10 +703,6 @@ def main():
     # print(f"📊 Best AUC Score: {best_auc:.4f}")
 
     # After hyperparameter search and best model selection, evaluate on test set
-    import torch
-    from torch.utils.data import DataLoader
-    from sklearn.metrics import f1_score, roc_auc_score, accuracy_score, precision_score
-    import yaml
     print("\n[INFO] Evaluating best model on test set...")
     # Load best model
     device = torch.device(config['model'].get('device', 'cpu'))
@@ -691,7 +711,7 @@ def main():
     model.load_state_dict(checkpoint['model_state_dict'])
     model.to(device)
     model.eval()
-    test_loader = DataLoader(test_data, batch_size=config['train']['batch_size'], shuffle=False)
+    test_loader = DataLoader(test_data, batch_size=config['model']['batch_size'], shuffle=False)
     all_preds = []
     all_labels = []
     with torch.no_grad():

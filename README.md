@@ -30,6 +30,7 @@ Chain-of-Influence (CoI) addresses the critical gap in clinical predictive model
 │   ├── models/                   # Model implementations
 │   │   ├── bilstm.py            # Bidirectional LSTM baseline
 │   │   ├── retain.py            # RETAIN attention model
+│   │   ├── transformer.py       # Transformer baseline model
 │   │   └── coi.py               # Chain-of-Influence model
 │   ├── data/                    # Data processing utilities
 │   │   ├── preprocess.py        # Data preprocessing
@@ -44,6 +45,7 @@ Chain-of-Influence (CoI) addresses the critical gap in clinical predictive model
 │   ├── coi_config.yaml          # CoI model configuration
 │   ├── retain_config.yaml       # RETAIN model configuration
 │   ├── bilstm_config.yaml       # BiLSTM model configuration
+│   ├── transformer_config.yaml  # Transformer model configuration
 │   ├── mimiciv_*.yaml          # MIMIC-IV specific configs
 │   └── feature_names.yaml      # Feature specifications
 ├── assets/                      # Visual assets and interactive demonstrations
@@ -103,22 +105,28 @@ Follow the instructions in [`data/README.md`](data/README.md) to obtain and orga
 
 **Training Models:**
 
-Train all three models on the CKD dataset:
+**Easy dataset selection with `--dataset` flag:**
 
+Train all models on CKD dataset (results saved to `./results/ckd/`):
 ```bash
-# Train BiLSTM baseline
-python scripts/train.py --model bilstm --hyperparameter-search
-
-# Train RETAIN model
-python scripts/train.py --model retain --hyperparameter-search
-
-# Train Chain-of-Influence model
-python scripts/train.py --model coi --hyperparameter-search
+python scripts/train.py --model bilstm --dataset ckd --hyperparameter-search
+python scripts/train.py --model retain --dataset ckd --hyperparameter-search
+python scripts/train.py --model transformer --dataset ckd --hyperparameter-search
+python scripts/train.py --model coi --dataset ckd --hyperparameter-search
 ```
 
-For MIMIC-IV dataset:
+Train all models on MIMIC-IV dataset (results saved to `./results/mimic/`):
 ```bash
-python scripts/train.py --model coi --config config/mimiciv_coi_config.yaml --hyperparameter-search
+python scripts/train.py --model bilstm --dataset mimic --hyperparameter-search
+python scripts/train.py --model retain --dataset mimic --hyperparameter-search
+python scripts/train.py --model transformer --dataset mimic --hyperparameter-search
+python scripts/train.py --model coi --dataset mimic --hyperparameter-search
+```
+
+**Alternative: Manual config specification:**
+```bash
+# You can still specify config files manually if needed
+python scripts/train.py --model transformer --config config/mimiciv_transformer_config.yaml --hyperparameter-search
 ```
 
 **Model Analysis:**
@@ -133,6 +141,30 @@ python scripts/analyze.py --model coi --output results/coi_analysis
 python scripts/analyze.py --model retain --output results/comparison
 python scripts/analyze.py --model coi --output results/comparison
 ```
+
+**Hyperparameter Tuning:**
+
+Control the number of hyperparameter combinations to test:
+
+```bash
+# Quick test (2-5 minutes)
+python scripts/train.py --model transformer --dataset ckd --hyperparameter-search --n-combinations 2
+
+# Development testing (10-30 minutes)
+python scripts/train.py --model transformer --dataset ckd --hyperparameter-search --n-combinations 5
+
+# Thorough tuning (1-5 hours)
+python scripts/train.py --model transformer --dataset ckd --hyperparameter-search --n-combinations 20
+
+# Default: 300 combinations (comprehensive search)
+python scripts/train.py --model transformer --dataset ckd --hyperparameter-search
+```
+
+Available hyperparameter combinations per model:
+- **Transformer**: 1,458 total combinations (emb_dim×hidden_dim×num_heads×num_layers×lr×batch_size×dropout)
+- **CoI**: 972 total combinations
+- **RETAIN**: 324 total combinations
+- **BiLSTM**: 108 total combinations
 
 </details>
 
@@ -156,6 +188,13 @@ Strong recurrent neural network baseline:
 - **Bidirectional Processing**: Captures both forward and backward temporal dependencies
 - **Simple Architecture**: Provides robust performance comparison baseline without attention mechanisms
 
+### Transformer
+Modern attention-based baseline using standard transformer architecture:
+- **Multi-Head Self-Attention**: Captures complex feature interactions across all time steps
+- **Positional Encoding**: Incorporates temporal position information
+- **Parallel Processing**: Efficient computation compared to sequential RNN models
+- **Two Variants**: Standard pooling-based and CLS token-based approaches
+
 ## Experimental Results
 
 ### Performance Comparison on CKD Dataset
@@ -164,7 +203,10 @@ Strong recurrent neural network baseline:
 |-------|-------|----------|----------|-----------|
 | BiLSTM | 0.930 | 0.650 | 0.910 | 0.750 |
 | RETAIN | 0.930 | 0.660 | 0.920 | 0.760 |
+| Transformer | TBD | TBD | TBD | TBD |
 | **CoI** | **0.950** | **0.690** | **0.940** | **0.790** |
+
+*Note: Transformer baseline results will be updated after training completion.*
 
 ### Key Findings
 

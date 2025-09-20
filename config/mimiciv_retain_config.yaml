@@ -1,6 +1,6 @@
 data:
-  processed_path: mimic-iv-3.1/processed/X_mimiciv.npy
-  label_path: mimic-iv-3.1/processed/y_mimiciv.npy
+  processed_path: ./data/mimic-iv-3.1/processed/X_mimiciv.npy
+  label_path: ./data/mimic-iv-3.1/processed/y_mimiciv.npy
   month_count: 48
 
 hyperparameters:
@@ -33,8 +33,8 @@ train:
   seed: 42
 
 paths:
-  results_path: ./Outputs/saved_models/
-  save_path: ./Outputs/saved_models/
+  results_path: ./results/mimic/
+  save_path: ./results/mimic/
 
 tuning:
   n_epochs: 20 

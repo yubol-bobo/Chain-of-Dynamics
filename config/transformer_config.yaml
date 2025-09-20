@@ -3,43 +3,54 @@ data:
   processed_path: ./data/ckd_data/processed/data_for_modeling_corrected.csv
   raw_path: ./data/ckd_data/raw/
 
-model:
-  type: bilstm
-  input_dim: 37
-  hidden_dim: 128
-  num_layers: 2
-  output_dim: 1
-  dropout: 0.2
-  learning_rate: 0.001
-  batch_size: 32
-  n_epochs: 500
-  patience: 7
-
 hyperparameters:
   batch_size:
-    - 16
     - 32
     - 64
+    - 128
   dropout:
     - 0.1
     - 0.2
     - 0.3
-  hidden_dim:
+  emb_dim:
     - 64
     - 128
     - 256
+  hidden_dim:
+    - 256
+    - 512
+    - 1024
   learning_rate:
     - 0.0001
     - 0.001
     - 0.01
+  num_heads:
+    - 4
+    - 8
+    - 16
   num_layers:
-    - 1
     - 2
-    - 3
+    - 4
+    - 6
+
+model:
+  type: transformer
+  input_dim: 37
+  emb_dim: 128
+  hidden_dim: 512
+  num_heads: 8
+  num_layers: 4
+  output_dim: 1
+  dropout: 0.2
+  learning_rate: 0.001
+  batch_size: 64
+  n_epochs: 500
+  patience: 10
+  max_seq_len: 50
 
 paths:
   results_path: ./results/ckd/
   save_path: ./results/ckd/
 
 tuning:
-  n_epochs: 500 
+  n_epochs: 500
