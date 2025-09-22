@@ -2,9 +2,9 @@
 """
 Unified Training Script for Clinical Models
 
-This script provides a unified training interface for BiLSTM, RETAIN, and CoI models,
-with support for hyperparameter tuning, TSMOTE data balancing, and comprehensive
-training metrics.
+This script provides a unified training interface for BiLSTM, RETAIN, CoI, Transformer,
+AdaCare, and StageNet models, with support for hyperparameter tuning, TSMOTE data
+balancing, and comprehensive training metrics.
 """
 
 import os
@@ -37,6 +37,8 @@ from src.models.retain import RETAIN
 from src.models.coi import CoI
 from src.models.bilstm import BiLSTM
 from src.models.transformer import TransformerModel
+from src.models.adacare import AdaCare
+from src.models.stagenet import StageNet
 
 def get_shape(x):
     if hasattr(x, 'shape'):
@@ -180,28 +182,50 @@ def prepare_data(config):
         train_data = TensorDataset(X_train, y_train)
         val_data = TensorDataset(X_val, y_val)
         test_data = TensorDataset(X_test, y_test)
-        return train_data, val_data, test_data
+
+        # For tsmote path, we need to calculate input_dim from the tensor shape
+        input_dim = X_train.shape[2] if len(X_train.shape) == 3 else config['model']['input_dim']
+        return train_data, val_data, test_data, input_dim
     else:
         data = pd.read_csv(processed_path).fillna(0)
         shape_0 = data.shape[0]
         print(f"Data loaded: {data.shape}")
 
-        input_dim = config['model']['input_dim']
         num_period = config['data']['month_count'] // 3
-        print(f"Input dim: {input_dim}, Num periods: {num_period}")
 
         # Extract features and labels
         features = data.drop(columns=['TMA_Acct', 'ESRD'])
         labels = data['ESRD']
         print(f"Features shape: {features.shape}, Labels shape: {labels.shape}")
-        
+
+        # Calculate the correct input_dim based on actual data
+        total_features = features.shape[1]
+        input_dim = total_features // num_period
+
+        # Ensure the dimensions work out correctly
+        expected_total = input_dim * num_period
+        if total_features != expected_total:
+            print(f"[WARNING] Feature count mismatch: {total_features} != {input_dim} * {num_period} = {expected_total}")
+            # Adjust by trimming extra features if necessary
+            if total_features > expected_total:
+                features = features.iloc[:, :expected_total]
+                print(f"[INFO] Trimmed features to {features.shape[1]} to match expected dimensions")
+            else:
+                # Pad with zeros if we have fewer features
+                padding_needed = expected_total - total_features
+                padding = np.zeros((features.shape[0], padding_needed))
+                features = np.concatenate([features.values, padding], axis=1)
+                print(f"[INFO] Padded features with {padding_needed} zero columns")
+
+        print(f"Final input dim: {input_dim}, Num periods: {num_period}")
+
         # Clean features: replace NaN and Inf with 0.0
         features = np.nan_to_num(features, nan=0.0, posinf=0.0, neginf=0.0)
-        
+
         # Normalize features
         scaler = StandardScaler()
         features_normalized = scaler.fit_transform(features)
-        
+
         # Reshape the data to n_patient x timesteps x input_dim
         features_reshaped = features_normalized.reshape(shape_0, num_period, input_dim)
 
@@ -263,15 +287,18 @@ def prepare_data(config):
         # Save class_weights_tensor in config for use in training
         config['class_weights_tensor'] = class_weights_tensor
 
-        return train_data, val_data, test_data
+        return train_data, val_data, test_data, input_dim
 
-def create_model(config):
+def create_model(config, input_dim=None):
     """Create model based on config type"""
     model_type = config['model'].get('type', 'retain')
-    
+
+    # Use provided input_dim or fall back to config
+    actual_input_dim = input_dim if input_dim is not None else config['model']['input_dim']
+
     if model_type.lower() == 'coi':
         model = CoI(
-            input_dim=config['model']['input_dim'],
+            input_dim=actual_input_dim,
             emb_dim=config['model']['emb_dim'],
             hidden_dim=config['model']['hidden_dim'],
             num_heads=config['model']['num_heads'],
@@ -287,7 +314,7 @@ def create_model(config):
                     module.alpha.data = torch.ones_like(module.alpha) * config['model']['alpha_init']
     elif model_type.lower() == 'bilstm':
         model = BiLSTM(
-            input_dim=config['model']['input_dim'],
+            input_dim=actual_input_dim,
             hidden_dim=config['model']['hidden_dim'],
             num_layers=config['model'].get('num_layers', 2),
             output_dim=config['model']['output_dim'],
@@ -295,7 +322,7 @@ def create_model(config):
         )
     elif model_type.lower() == 'retain':
         model = RETAIN(
-            input_dim=config['model']['input_dim'],
+            input_dim=actual_input_dim,
             emb_dim=config['model']['emb_dim'],
             hidden_dim=config['model']['hidden_dim'],
             output_dim=config['model']['output_dim'],
@@ -303,7 +330,7 @@ def create_model(config):
         )
     elif model_type.lower() == 'transformer':
         model = TransformerModel(
-            input_dim=config['model']['input_dim'],
+            input_dim=actual_input_dim,
             emb_dim=config['model']['emb_dim'],
             hidden_dim=config['model']['hidden_dim'],
             num_heads=config['model']['num_heads'],
@@ -312,8 +339,26 @@ def create_model(config):
             dropout=config['model'].get('dropout', 0.2),
             max_seq_len=config['model'].get('max_seq_len', 50)
         )
+    elif model_type.lower() == 'adacare':
+        model = AdaCare(
+            input_dim=actual_input_dim,
+            hidden_dim=config['model']['hidden_dim'],
+            output_dim=config['model']['output_dim'],
+            num_heads=config['model'].get('num_heads', 2),
+            dropout=config['model'].get('dropout', 0.2),
+            calibration_dim=config['model'].get('calibration_dim', 64)
+        )
+    elif model_type.lower() == 'stagenet':
+        model = StageNet(
+            input_dim=actual_input_dim,
+            hidden_dim=config['model']['hidden_dim'],
+            output_dim=config['model']['output_dim'],
+            num_stages=config['model'].get('num_stages', 4),
+            kernel_size=config['model'].get('kernel_size', 3),
+            dropout=config['model'].get('dropout', 0.2)
+        )
     else:
-        raise ValueError(f"Unknown model type: {model_type}. Supported types: retain, coi, bilstm, transformer")
+        raise ValueError(f"Unknown model type: {model_type}. Supported types: retain, coi, bilstm, transformer, adacare, stagenet")
     
     return model
 
@@ -350,8 +395,36 @@ def train_model(model, train_loader, val_loader, criterion, optimizer, config, l
             inputs, labels = inputs.to(device), labels.to(device)
             optimizer.zero_grad()
             outputs = model(inputs)
+
+            # Check for NaN in model outputs
+            if torch.isnan(outputs).any():
+                print(f"[WARNING] NaN detected in model outputs at epoch {epoch}, skipping batch")
+                continue
+
             loss = criterion(outputs, labels.unsqueeze(1))
+
+            # Check for NaN in loss
+            if torch.isnan(loss):
+                print(f"[WARNING] NaN detected in loss at epoch {epoch}, skipping batch")
+                continue
+
             loss.backward()
+
+            # Check for NaN in gradients
+            has_nan_grad = False
+            for param in model.parameters():
+                if param.grad is not None and torch.isnan(param.grad).any():
+                    has_nan_grad = True
+                    break
+
+            if has_nan_grad:
+                print(f"[WARNING] NaN detected in gradients at epoch {epoch}, skipping batch")
+                optimizer.zero_grad()
+                continue
+
+            # Gradient clipping to prevent exploding gradients
+            torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+
             optimizer.step()
             epoch_losses.append(loss.item())
 
@@ -428,7 +501,7 @@ def train_model(model, train_loader, val_loader, criterion, optimizer, config, l
                 
     return metrics
 
-def hyperparameter_search(config, train_data, val_data, test_data, n_combinations=10):
+def hyperparameter_search(config, train_data, val_data, test_data, actual_input_dim, n_combinations=10):
     model_type = config['model'].get('type', 'retain')
     device = torch.device(config['model']['device'])
     save_path = config['paths']['save_path']
@@ -469,8 +542,26 @@ def hyperparameter_search(config, train_data, val_data, test_data, n_combination
             'batch_size': [32, 64, 128],
             'dropout': [0.1, 0.2, 0.3]
         }
+    elif model_type.lower() == 'adacare':
+        hyperparameters = {
+            'hidden_dim': [128, 256, 512],
+            'num_heads': [1, 2, 4],
+            'calibration_dim': [32, 64, 128],
+            'learning_rate': [0.001, 0.0001],
+            'batch_size': [32, 64, 128],
+            'dropout': [0.1, 0.2, 0.3]
+        }
+    elif model_type.lower() == 'stagenet':
+        hyperparameters = {
+            'hidden_dim': [128, 256, 512],
+            'num_stages': [3, 4, 5],
+            'kernel_size': [3, 5, 7],
+            'learning_rate': [0.001, 0.0001],
+            'batch_size': [32, 64, 128],
+            'dropout': [0.1, 0.2, 0.3]
+        }
     else:
-        raise ValueError(f"Unknown model type: {model_type}. Supported types: retain, coi, bilstm, transformer")
+        raise ValueError(f"Unknown model type: {model_type}. Supported types: retain, coi, bilstm, transformer, adacare, stagenet")
     param_names = list(hyperparameters.keys())
     param_values = list(hyperparameters.values())
     all_combinations = list(itertools.product(*param_values))
@@ -483,7 +574,7 @@ def hyperparameter_search(config, train_data, val_data, test_data, n_combination
     for i, params in enumerate(tqdm(all_combinations, desc="Hyperparameter Search")):
         params_dict = dict(zip(param_names, params))
         config['model'].update(params_dict)
-        model = create_model(config)
+        model = create_model(config, actual_input_dim)
         model = model.to(device)
         optimizer = optim.Adam(model.parameters(), lr=params_dict['learning_rate'])
         train_loader = DataLoader(train_data, batch_size=params_dict['batch_size'], shuffle=True)
@@ -613,7 +704,7 @@ def main():
     import os
     # Parse command line arguments
     parser = argparse.ArgumentParser(description='Unified Training Script for Clinical Models')
-    parser.add_argument('--model', type=str, required=True, help='Model type: retain, coi, bilstm, transformer')
+    parser.add_argument('--model', type=str, required=True, help='Model type: retain, coi, bilstm, transformer, adacare, stagenet')
     parser.add_argument('--dataset', type=str, choices=['ckd', 'mimic'], default='ckd',
                        help='Dataset to use: ckd or mimic (default: ckd)')
     parser.add_argument('--hyperparameter-search', action='store_true',
@@ -652,7 +743,7 @@ def main():
     print(f"Using device: {config['model']['device']}")
 
     # Prepare data
-    train_data, val_data, test_data = prepare_data(config)
+    train_data, val_data, test_data, actual_input_dim = prepare_data(config)
     print("Data prepared.")
     
     best_model_path = None
@@ -660,7 +751,7 @@ def main():
         # Perform hyperparameter search
         print(f"Starting hyperparameter search with {args.n_combinations} combinations...")
         best_params, best_f1, best_auc, best_model_path = hyperparameter_search(
-            config, train_data, val_data, test_data,
+            config, train_data, val_data, test_data, actual_input_dim,
             n_combinations=args.n_combinations
         )
 
@@ -706,7 +797,7 @@ def main():
     print("\n[INFO] Evaluating best model on test set...")
     # Load best model
     device = torch.device(config['model'].get('device', 'cpu'))
-    model = create_model(config)
+    model = create_model(config, actual_input_dim)
     checkpoint = torch.load(best_model_path, map_location=device)
     model.load_state_dict(checkpoint['model_state_dict'])
     model.to(device)

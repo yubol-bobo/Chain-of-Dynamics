@@ -1,0 +1,53 @@
+{
+  "analysis_date": "2025-09-20 17:03:37",
+  "datasets_analyzed": [
+    "CKD",
+    "MIMIC-IV"
+  ],
+  "models_evaluated": [
+    "BiLSTM",
+    "RETAIN",
+    "Transformer",
+    "AdaCare",
+    "StageNet",
+    "CoI"
+  ],
+  "summary": {
+    "CKD": {
+      "Best_F1": {
+        "model": "TRANSFORMER",
+        "value": 0.28
+      },
+      "Best_AUROC": {
+        "model": "TRANSFORMER",
+        "value": 0.6547
+      },
+      "Best_Accuracy": {
+        "model": "TRANSFORMER",
+        "value": 0.8672
+      },
+      "Best_Precision": {
+        "model": "TRANSFORMER",
+        "value": 0.2121
+      }
+    },
+    "MIMIC-IV": {
+      "Best_F1": {
+        "model": "TRANSFORMER",
+        "value": 0.4635
+      },
+      "Best_AUROC": {
+        "model": "TRANSFORMER",
+        "value": 0.6604
+      },
+      "Best_Accuracy": {
+        "model": "TRANSFORMER",
+        "value": 0.9162
+      },
+      "Best_Precision": {
+        "model": "TRANSFORMER",
+        "value": 0.758
+      }
+    }
+  }
+}

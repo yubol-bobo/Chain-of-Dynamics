@@ -1,8 +1,7 @@
 data:
-  processed_path: ./data/mimic-iv-3.1/processed/X_mimiciv_parallel.npy
-  label_path: ./data/mimic-iv-3.1/processed/y_mimiciv_parallel.npy
-  raw_path: ./data/mimic-iv-3.1/
-  
+  processed_path: ./data/ckd_data/processed/ckd_merged_data_for_modeling.csv
+  month_count: 24
+
 hyperparameters:
   batch_size:
     - 32
@@ -20,26 +19,31 @@ hyperparameters:
     - 0.0001
     - 0.001
     - 0.01
-  num_layers:
+  num_heads:
     - 1
     - 2
-    - 3
+    - 4
+  calibration_dim:
+    - 32
+    - 64
+    - 128
 
 model:
-  type: bilstm
-  input_dim: 15
+  type: adacare
+  input_dim: 37
   hidden_dim: 128
-  num_layers: 2
+  num_heads: 2
   output_dim: 1
   dropout: 0.2
+  calibration_dim: 64
   learning_rate: 0.001
   batch_size: 64
   n_epochs: 500
   patience: 10
 
 paths:
-  results_path: ./results/mimic/
-  save_path: ./results/mimic/
+  results_path: ./results/ckd/
+  save_path: ./results/ckd/
 
 tuning:
-  n_epochs: 500 
+  n_epochs: 500

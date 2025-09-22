@@ -112,6 +112,8 @@ Train all models on CKD dataset (results saved to `./results/ckd/`):
 python scripts/train.py --model bilstm --dataset ckd --hyperparameter-search
 python scripts/train.py --model retain --dataset ckd --hyperparameter-search
 python scripts/train.py --model transformer --dataset ckd --hyperparameter-search
+python scripts/train.py --model adacare --dataset ckd --hyperparameter-search
+python scripts/train.py --model stagenet --dataset ckd --hyperparameter-search
 python scripts/train.py --model coi --dataset ckd --hyperparameter-search
 ```
 
@@ -120,6 +122,8 @@ Train all models on MIMIC-IV dataset (results saved to `./results/mimic/`):
 python scripts/train.py --model bilstm --dataset mimic --hyperparameter-search
 python scripts/train.py --model retain --dataset mimic --hyperparameter-search
 python scripts/train.py --model transformer --dataset mimic --hyperparameter-search
+python scripts/train.py --model adacare --dataset mimic --hyperparameter-search
+python scripts/train.py --model stagenet --dataset mimic --hyperparameter-search
 python scripts/train.py --model coi --dataset mimic --hyperparameter-search
 ```
 
@@ -128,6 +132,49 @@ python scripts/train.py --model coi --dataset mimic --hyperparameter-search
 # You can still specify config files manually if needed
 python scripts/train.py --model transformer --config config/mimiciv_transformer_config.yaml --hyperparameter-search
 ```
+
+**Automated Complete Pipeline:**
+
+Run all models on both datasets automatically:
+
+**Linux/Mac:**
+```bash
+# Make script executable and run
+chmod +x run_all_experiments.sh
+./run_all_experiments.sh
+
+# Or with custom parameters
+./run_all_experiments.sh --combinations 10 --conda-env coi
+```
+
+**Windows:**
+```cmd
+# Run with default settings (2 combinations per model)
+run_all_experiments.bat
+
+# Or with custom parameters (combinations, conda-env)
+run_all_experiments.bat 10 coi
+```
+
+This pipeline will:
+1. Train all 6 models (BiLSTM, RETAIN, Transformer, AdaCare, StageNet, CoI) on both datasets
+2. Automatically generate comprehensive summary tables
+3. Provide progress tracking and error handling
+4. Show total time and success statistics
+
+**Manual Results Analysis:**
+
+If you want to analyze results separately:
+```bash
+# Analyze all results and create summary tables
+python scripts/analyze_results.py
+```
+
+This will generate:
+- `./results/summary_ckd_results.csv` - CKD dataset results table
+- `./results/summary_mimic_results.csv` - MIMIC-IV dataset results table
+- `./results/combined_results_summary.xlsx` - Combined Excel file with both datasets
+- `./results/results_analysis_summary.json` - Analysis summary with best performing models
 
 **Model Analysis:**
 
@@ -195,6 +242,20 @@ Modern attention-based baseline using standard transformer architecture:
 - **Parallel Processing**: Efficient computation compared to sequential RNN models
 - **Two Variants**: Standard pooling-based and CLS token-based approaches
 
+### AdaCare
+Recent RETAIN-based model with adaptive feature calibration (2020):
+- **Feature Calibration**: Adaptive recalibration of feature importance based on global and local contexts
+- **Enhanced Interpretability**: Improved attention mechanisms for better clinical explanation
+- **Knowledge Distillation**: Advanced representation learning for better performance
+- **Multi-level Attention**: Combines temporal and feature-level attention with calibration
+
+### StageNet
+Stage-aware neural network for health risk prediction (2020):
+- **Disease Stage Modeling**: Explicitly models different stages of disease progression
+- **Stage-aware Convolution**: Uses different kernels to capture stage-specific patterns
+- **Temporal Stage Transitions**: Models how patients transition between disease stages
+- **Adaptive Stage Attention**: Combines temporal attention with stage-aware weighting
+
 ## Experimental Results
 
 ### Performance Comparison on CKD Dataset
@@ -204,9 +265,11 @@ Modern attention-based baseline using standard transformer architecture:
 | BiLSTM | 0.930 | 0.650 | 0.910 | 0.750 |
 | RETAIN | 0.930 | 0.660 | 0.920 | 0.760 |
 | Transformer | TBD | TBD | TBD | TBD |
+| AdaCare | TBD | TBD | TBD | TBD |
+| StageNet | TBD | TBD | TBD | TBD |
 | **CoI** | **0.950** | **0.690** | **0.940** | **0.790** |
 
-*Note: Transformer baseline results will be updated after training completion.*
+*Note: Results for new baseline models will be updated after training completion.*
 
 ### Key Findings
 

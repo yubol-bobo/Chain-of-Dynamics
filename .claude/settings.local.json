@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(conda run:*)"
+      "Bash(conda run:*)",
+      "Bash(find:*)"
     ],
     "deny": [],
     "ask": []

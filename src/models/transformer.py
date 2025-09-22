@@ -78,7 +78,7 @@ class TransformerModel(nn.Module):
         # Positional encoding
         self.pos_encoder = PositionalEncoding(emb_dim, max_seq_len, dropout)
 
-        # Transformer encoder layers
+        # Transformer encoder layers with stability improvements
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=emb_dim,
             nhead=num_heads,
@@ -92,6 +92,9 @@ class TransformerModel(nn.Module):
             encoder_layer,
             num_layers=num_layers
         )
+
+        # Additional layer normalization for stability
+        self.layer_norm = nn.LayerNorm(emb_dim)
 
         # Classification head
         self.classifier = nn.Sequential(
@@ -117,12 +120,18 @@ class TransformerModel(nn.Module):
         """Initialize model weights"""
         for module in self.modules():
             if isinstance(module, nn.Linear):
-                nn.init.xavier_uniform_(module.weight)
+                # Use smaller initialization for better stability
+                nn.init.xavier_uniform_(module.weight, gain=0.1)
                 if module.bias is not None:
                     nn.init.zeros_(module.bias)
             elif isinstance(module, nn.LayerNorm):
                 nn.init.ones_(module.weight)
                 nn.init.zeros_(module.bias)
+            elif isinstance(module, nn.TransformerEncoderLayer):
+                # Initialize transformer layers with smaller weights
+                for param in module.parameters():
+                    if param.dim() > 1:
+                        nn.init.xavier_uniform_(param, gain=0.1)
 
     def forward(self, x):
         """
@@ -151,6 +160,9 @@ class TransformerModel(nn.Module):
         # Transformer encoder
         transformer_out = self.transformer_encoder(x, mask=attn_mask)
         # transformer_out: [batch_size, seq_len, emb_dim]
+
+        # Apply layer normalization for stability
+        transformer_out = self.layer_norm(transformer_out)
 
         # Global average pooling across sequence dimension
         pooled = transformer_out.transpose(1, 2)  # [batch_size, emb_dim, seq_len]

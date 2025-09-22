@@ -98,8 +98,8 @@ class TSMOTE:
         X_resampled = np.vstack([X, X_synthetic])
         y_resampled = np.hstack([y, y_synthetic])
         
-        print(f"✅ TSMOTE: Generated {len(synthetic_samples)} synthetic samples")
-        print(f"✅ Original: {len(y)} samples, Resampled: {len(y_resampled)} samples")
+        print(f"[SUCCESS] TSMOTE: Generated {len(synthetic_samples)} synthetic samples")
+        print(f"[SUCCESS] Original: {len(y)} samples, Resampled: {len(y_resampled)} samples")
         
         return X_resampled, y_resampled
     
