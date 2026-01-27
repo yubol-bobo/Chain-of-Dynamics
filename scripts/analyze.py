@@ -44,9 +44,11 @@ def load_config(config_path):
     with open(config_path, 'r') as f:
         return yaml.safe_load(f)
 
-def load_best_hyperparams(model_type):
+def load_best_hyperparams(model_type, results_path=None):
     import yaml
-    summary_path = f"Outputs/saved_models/{model_type.lower()}_hypersearch_summary.yaml"
+    if results_path is None:
+        results_path = os.path.join("results", "ckd")
+    summary_path = os.path.join(results_path, f"{model_type.lower()}_hypersearch_summary.yaml")
     if not os.path.exists(summary_path):
         print(f"[WARNING] Best hyperparameter summary not found: {summary_path}")
         return None
@@ -101,11 +103,11 @@ def prepare_data(config):
     y_test = to_tensor(y_test)
     test_data = TensorDataset(X_test, y_test)
     test_data_loader = DataLoader(test_data, batch_size=32, shuffle=False)
-    input_dim = config['model']['input_dim']
-    num_period = config['data']['month_count'] // 3
+    seq_len = X_test.shape[1]
+    input_dim = X_test.shape[2]
     feature_names = [f"Feature {i+1}" for i in range(input_dim)]
-    time_points = [f"t-{i}" for i in range(num_period-1, -1, -1)]
-    return test_data_loader, feature_names, time_points
+    time_points = [f"t-{i}" for i in range(seq_len - 1, -1, -1)]
+    return X_test, y_test, test_data_loader, feature_names, time_points, input_dim
 
 def plot_temporal_attention(attn, time_points, save_path):
     attn_1d = np.array(attn).squeeze()
@@ -123,9 +125,12 @@ def plot_temporal_attention(attn, time_points, save_path):
     plt.savefig(save_path)
     plt.close()
 
-def plot_feature_attention(attn, feature_names, save_path, model=None, inputs=None, time_points=None, output_dir=None):
+def plot_feature_attention(attn, feature_names, save_path, model=None, inputs=None, time_points=None, output_dir=None, contrib_matrix_override=None):
     attn = np.array(attn)
-    if model is not None and hasattr(model, 'compute_contributions') and inputs is not None:
+    if contrib_matrix_override is not None:
+        contrib_matrix = np.array(contrib_matrix_override)
+        attn_1d = np.mean(contrib_matrix, axis=0)
+    elif model is not None and hasattr(model, 'compute_contributions') and inputs is not None:
         try:
             contrib = model.compute_contributions(0)  # shape: [seq_len, input_dim]
             attn_1d = np.mean(contrib, axis=0)
@@ -284,6 +289,81 @@ def load_feature_names():
     with open('config/feature_names.yaml', 'r') as f:
         return yaml.safe_load(f)['feature_names']
 
+def evaluate_model(model, data_loader, device):
+    all_preds = []
+    all_probs = []
+    all_labels = []
+    model.eval()
+    with torch.no_grad():
+        for inputs, labels in data_loader:
+            inputs = inputs.to(device)
+            labels = labels.to(device)
+            outputs = model(inputs)
+            if outputs.shape[-1] == 1 or len(outputs.shape) == 1:
+                probs = torch.sigmoid(outputs).squeeze().cpu().numpy()
+                preds = (probs > 0.5).astype(int)
+                pos_probs = probs
+            else:
+                probs = torch.softmax(outputs, dim=-1).cpu().numpy()
+                preds = np.argmax(probs, axis=-1)
+                pos_probs = probs[:, 1] if probs.shape[1] > 1 else probs.max(axis=1)
+            all_preds.append(preds)
+            all_probs.append(pos_probs)
+            all_labels.append(labels.cpu().numpy())
+    return np.concatenate(all_labels), np.concatenate(all_preds), np.concatenate(all_probs)
+
+def select_patient_indices(y_test, n_patients=8, seed=2025):
+    rng = np.random.default_rng(seed)
+    y_np = y_test.cpu().numpy().astype(int)
+    pos_idx = np.where(y_np == 1)[0]
+    neg_idx = np.where(y_np == 0)[0]
+    half = n_patients // 2
+    n_pos = min(len(pos_idx), half)
+    n_neg = min(len(neg_idx), n_patients - n_pos)
+    pos_sel = rng.choice(pos_idx, size=n_pos, replace=False) if n_pos > 0 else np.array([], dtype=int)
+    neg_sel = rng.choice(neg_idx, size=n_neg, replace=False) if n_neg > 0 else np.array([], dtype=int)
+    selected = np.concatenate([pos_sel, neg_sel])
+    rng.shuffle(selected)
+    return selected.tolist()
+
+def compute_inter_feature_influence_single(model, inputs, feature_names=None, time_points=None):
+    """
+    Cross-temporal-feature influence for a single patient.
+    Returns a block-matrix DataFrame with Feature_t-X labels.
+    """
+    model.eval()
+    with torch.no_grad():
+        _ = model(inputs)
+        contrib = model.compute_contributions(0)  # [T, F]
+        cross_attn = model.get_attention_weights().get('cross_feature', None)
+        if isinstance(cross_attn, list) and len(cross_attn) > 0:
+            # Average over heads, then layers -> [1, T, T] -> [T, T]
+            per_layer = [cw.mean(dim=1) for cw in cross_attn]
+            cross_attn_tensor = torch.stack(per_layer, dim=0).mean(dim=0)[0]
+        elif cross_attn is not None:
+            if cross_attn.dim() == 4:
+                cross_attn_tensor = cross_attn.mean(dim=1)[0]
+            else:
+                cross_attn_tensor = cross_attn[0]
+        else:
+            raise RuntimeError('No cross_feature attention available')
+    A = cross_attn_tensor.detach().cpu().numpy()  # [T, T]
+    A_swapped = A.T  # match compute_inter_feature_influence_v2 convention
+    T, F = contrib.shape
+    influence = np.full((T * F, T * F), np.nan, dtype=float)
+    for t in range(T):
+        for u in range(t + 1, T):
+            block = A_swapped[t, u] * np.outer(contrib[t], contrib[u])
+            rs, re = t * F, (t + 1) * F
+            cs, ce = u * F, (u + 1) * F
+            influence[rs:re, cs:ce] = block
+    if feature_names is None:
+        feature_names = [f"Feature_{i+1}" for i in range(F)]
+    if time_points is None:
+        time_points = [f"t-{i}" for i in range(T)]
+    labels = [f"{feature_names[f]}_{time_points[t]}" for t in range(T) for f in range(F)]
+    return pd.DataFrame(influence, index=labels, columns=labels)
+
 def build_network_from_influence(df, threshold=0.001):
     print("[DEBUG] Influence DataFrame shape:", df.shape)
     print("[DEBUG] Influence DataFrame head:\n", df.head())
@@ -334,16 +414,11 @@ def plot_interactive_network(G, output_file="interactive_network.html"):
 
 def main():
     parser = argparse.ArgumentParser(description='Unified Model Analysis Script')
-    parser.add_argument('--model', type=str, required=True, help='Model type: retain, coi, bilstm')
-    parser.add_argument('--checkpoint', type=str, required=False, help='Path to best model checkpoint (if not provided, will use Outputs/saved_models/{model}_best_model_hypersearch.pt)')
+    parser.add_argument('--model', type=str, required=True, help='Model type: retain, coi, bilstm, transformer, adacare, stagenet')
+    parser.add_argument('--checkpoint', type=str, required=False, help='Path to best model checkpoint (if not provided, will use results_path/{model}_best_model_hypersearch.pt from the config)')
     parser.add_argument('--config', type=str, required=False, help='Path to config YAML (if not provided, will use config/{model}_config.yaml)')
     parser.add_argument('--output', type=str, default='./visualizations/unified_analysis', help='Output directory')
     args = parser.parse_args()
-
-    # Auto-determine checkpoint if not provided
-    if args.checkpoint is None:
-        args.checkpoint = f"Outputs/saved_models/{args.model.lower()}_best_model_hypersearch.pt"
-        print(f"[INFO] Using checkpoint: {args.checkpoint}")
 
     # Auto-determine config if not provided
     if args.config is None:
@@ -352,123 +427,155 @@ def main():
 
     os.makedirs(args.output, exist_ok=True)
     config = load_config(args.config)
+    config['model']['type'] = args.model.lower()
+    results_path = config['paths']['results_path']
+
+    # Auto-determine checkpoint if not provided (use results path).
+    if args.checkpoint is None:
+        args.checkpoint = os.path.join(results_path, f"{args.model.lower()}_best_model_hypersearch.pt")
+        print(f"[INFO] Using checkpoint: {args.checkpoint}")
 
     
 
     # Load and apply best hyperparameters
-    best_params = load_best_hyperparams(args.model)
+    best_params = load_best_hyperparams(args.model, results_path=results_path)
     if best_params is not None:
         config['model'].update(best_params)
         print(f"[INFO] Loaded best hyperparameters from summary for {args.model}: {best_params}")
 
+    X_test, y_test, data_loader, _, time_points, input_dim = prepare_data(config)
+    config['model']['input_dim'] = input_dim
     device = torch.device(config['model'].get('device', 'cpu'))
     model = load_model(args.model, config, args.checkpoint, device)
-    data_loader, feature_names, time_points = prepare_data(config)
 
     # Load feature names from config
     feature_names = load_feature_names()
+    if len(feature_names) != input_dim:
+        print(f"[WARNING] feature_names length ({len(feature_names)}) does not match input_dim ({input_dim}). Using generic names.")
+        feature_names = [f"Feature {i+1}" for i in range(input_dim)]
 
-    # Get a batch for analysis
-    all_preds = []
-    all_labels = []
-    model.eval()
-    with torch.no_grad():
-        for inputs, labels in data_loader:
-            inputs = inputs.to(device)
-            labels = labels.to(device)
-            outputs = model(inputs)
-            if outputs.shape[-1] == 1 or len(outputs.shape) == 1:
-                probs = torch.sigmoid(outputs).squeeze().cpu().numpy()
-                preds = (probs > 0.5).astype(int)
-            else:
-                probs = torch.softmax(outputs, dim=-1).cpu().numpy()
-                preds = np.argmax(probs, axis=-1)
-            all_preds.append(preds)
-            all_labels.append(labels.cpu().numpy())
-    all_preds = np.concatenate(all_preds)
-    all_labels = np.concatenate(all_labels)
+    # 1) Cohort-level analysis
+    cohort_dir = os.path.join(args.output, "cohort")
+    os.makedirs(cohort_dir, exist_ok=True)
 
+    all_labels, all_preds, all_probs = evaluate_model(model, data_loader, device)
     from sklearn.metrics import f1_score, roc_auc_score, accuracy_score, precision_score
     f1 = f1_score(all_labels, all_preds)
     try:
-        auroc = roc_auc_score(all_labels, all_preds)
+        auroc = roc_auc_score(all_labels, all_probs)
     except Exception:
         auroc = float('nan')
     acc = accuracy_score(all_labels, all_preds)
-    prec = precision_score(all_labels, all_preds)
-    print(f"[TEST] F1: {f1:.4f}, AUROC: {auroc:.4f}, Accuracy: {acc:.4f}, Precision: {prec:.4f}")
+    prec = precision_score(all_labels, all_preds, zero_division=0)
+    print(f"[COHORT] F1: {f1:.4f}, AUROC: {auroc:.4f}, Accuracy: {acc:.4f}, Precision: {prec:.4f}")
 
-    # Save metrics to YAML
     import yaml
-    metrics = {
+    cohort_metrics = {
         'f1': float(f1),
         'auroc': float(auroc),
         'accuracy': float(acc),
         'precision': float(prec)
     }
-    metrics_path = os.path.join(args.output, 'metrics_test.yaml')
-    with open(metrics_path, 'w') as f:
-        yaml.dump(metrics, f)
-    print(f"[TEST] Metrics saved to: {metrics_path}")
+    cohort_metrics_path = os.path.join(cohort_dir, 'metrics_test.yaml')
+    with open(cohort_metrics_path, 'w') as f:
+        yaml.dump(cohort_metrics, f)
 
-    # Get a batch for analysis
-    inputs, _ = next(iter(data_loader))
-    inputs = inputs.to(device)
+    temporal_batches = []
+    feature_batches = []
+    contrib_list = []
     with torch.no_grad():
-        _ = model(inputs)
-        if hasattr(model, 'get_attention_weights'):
+        for inputs, _ in data_loader:
+            inputs = inputs.to(device)
+            _ = model(inputs)
+            if not hasattr(model, 'get_attention_weights'):
+                continue
             attn = model.get_attention_weights()
-            print("[DEBUG] Attention keys and shapes:", {k: (v.shape if hasattr(v, 'shape') else type(v)) for k, v in attn.items()})
-        else:
-            print(f"Model {args.model} does not implement get_attention_weights(). Skipping analysis.")
-            return
+            temporal = attn.get('temporal', None)
+            if temporal is not None:
+                temporal_batches.append(temporal.mean(dim=0).detach().cpu().numpy())
+            feature = attn.get('feature', None)
+            if feature is not None:
+                feature_batches.append(feature.mean(dim=0).detach().cpu().numpy())
+            if hasattr(model, 'compute_contributions'):
+                for i in range(inputs.size(0)):
+                    contrib_list.append(model.compute_contributions(i))
 
-    # Temporal-level analysis
-    if 'temporal' in attn and attn['temporal'] is not None:
-        temporal_attn = attn['temporal'].mean(dim=0).cpu().numpy() if hasattr(attn['temporal'], 'mean') else np.mean(attn['temporal'], axis=0)
-        print(f"[DEBUG] Plotting temporal attention, shape: {temporal_attn.shape}")
-        plot_temporal_attention(temporal_attn, time_points, os.path.join(args.output, f'{args.model}_temporal_attention.png'))
-        print(f"Saved temporal attention plot: {args.model}_temporal_attention.png")
+    if temporal_batches:
+        temporal_cohort = np.mean(np.stack(temporal_batches, axis=0), axis=0)
+        plot_temporal_attention(temporal_cohort, time_points, os.path.join(cohort_dir, f'{args.model}_temporal_attention.png'))
     else:
-        print("No temporal attention available for this model.")
+        print("[COHORT] No temporal attention available.")
 
-    # Feature-level analysis
-    if 'feature' in attn and attn['feature'] is not None:
-        feature_attn = attn['feature'].mean(dim=0).cpu().numpy() if hasattr(attn['feature'], 'mean') else np.mean(attn['feature'], axis=0)
-        print(f"[DEBUG] Plotting feature attention, shape: {feature_attn.shape}")
-        plot_feature_attention(feature_attn, feature_names, os.path.join(args.output, f'{args.model}_feature_attention.png'), model=model, inputs=inputs, time_points=time_points, output_dir=args.output)
-        print(f"Saved feature attention plot: {args.model}_feature_attention.png")
+    if contrib_list:
+        contrib_cohort = np.mean(np.stack(contrib_list, axis=0), axis=0)  # [T, F]
+        plot_feature_attention(
+            contrib_cohort, feature_names, os.path.join(cohort_dir, f'{args.model}_feature_attention.png'),
+            time_points=time_points, output_dir=cohort_dir, contrib_matrix_override=contrib_cohort
+        )
+    elif feature_batches:
+        feature_cohort = np.mean(np.stack(feature_batches, axis=0), axis=0)
+        plot_feature_attention(
+            feature_cohort, feature_names, os.path.join(cohort_dir, f'{args.model}_feature_attention.png'),
+            time_points=time_points, output_dir=cohort_dir
+        )
     else:
-        print("No feature attention available for this model.")
+        print("[COHORT] No feature attention available.")
 
-    # Cross-temporal-feature analysis (CSV only, vectorized, for all models with compute_contributions)
     df_influence = None
     if hasattr(model, 'compute_contributions'):
         try:
-            print("[INFO] Running vectorized cross-temporal-feature influence analysis (CSV only)...")
             df_influence = compute_inter_feature_influence_v2(model, data_loader, device, feature_names, time_points)
-            csv_path = os.path.join(args.output, f'{args.model}_cross_temporal_feature_influence.csv')
-            df_influence.to_csv(csv_path, index=True)
-            print(f"[INFO] Cross-temporal-feature influence CSV saved to: {csv_path}")
+            cohort_csv_path = os.path.join(cohort_dir, f'{args.model}_cross_temporal_feature_influence.csv')
+            df_influence.to_csv(cohort_csv_path, index=True)
         except Exception as e:
-            print(f"[WARNING] Cross-temporal-feature CSV analysis failed: {e}")
+            print(f"[COHORT] Cross-temporal-feature analysis failed: {e}")
             df_influence = None
-    else:
-        print("No cross-temporal-feature analysis available for this model.")
 
-
-
-    # Save interactive network
     if df_influence is not None and _has_pyvis:
-        print("[INFO] Generating interactive network visualization...")
         G = build_network_from_influence(df_influence, threshold=0.001)
-        html_path = os.path.join(args.output, f'{args.model}_cross_temporal_feature_network.html')
-        plot_interactive_network(G, output_file=html_path)
-        print(f"[INFO] Interactive network saved to: {html_path}")
-    elif df_influence is None:
-        print("[INFO] No cross_feature attention available; skipping interactive network visualization.")
-    else:
-        print("[WARNING] pyvis not installed. Skipping interactive network visualization.")
+        cohort_html_path = os.path.join(cohort_dir, f'{args.model}_cross_temporal_feature_network.html')
+        plot_interactive_network(G, output_file=cohort_html_path)
+
+    # 2) Individual-level analysis for 8 patients (mix of positive/negative labels)
+    patient_indices = select_patient_indices(y_test, n_patients=8, seed=2025)
+    print(f"[PATIENT] Selected indices: {patient_indices}")
+
+    for idx in patient_indices:
+        label = int(y_test[idx].item())
+        patient_dir = os.path.join(args.output, f"patient_{idx}_label_{label}")
+        os.makedirs(patient_dir, exist_ok=True)
+        inputs = X_test[idx:idx + 1].to(device)
+
+        with torch.no_grad():
+            _ = model(inputs)
+            if not hasattr(model, 'get_attention_weights'):
+                continue
+            attn = model.get_attention_weights()
+
+        temporal = attn.get('temporal', None)
+        if temporal is not None:
+            temporal_attn = temporal[0].detach().cpu().numpy()
+            plot_temporal_attention(temporal_attn, time_points, os.path.join(patient_dir, f'{args.model}_temporal_attention.png'))
+
+        feature = attn.get('feature', None)
+        if feature is not None:
+            feature_attn = feature[0].detach().cpu().numpy()
+            plot_feature_attention(
+                feature_attn, feature_names, os.path.join(patient_dir, f'{args.model}_feature_attention.png'),
+                model=model, inputs=inputs, time_points=time_points, output_dir=patient_dir
+            )
+
+        if hasattr(model, 'compute_contributions'):
+            try:
+                df_single = compute_inter_feature_influence_single(model, inputs, feature_names, time_points)
+                single_csv_path = os.path.join(patient_dir, f'{args.model}_cross_temporal_feature_influence.csv')
+                df_single.to_csv(single_csv_path, index=True)
+                if _has_pyvis:
+                    G_single = build_network_from_influence(df_single, threshold=0.001)
+                    single_html_path = os.path.join(patient_dir, f'{args.model}_cross_temporal_feature_network.html')
+                    plot_interactive_network(G_single, output_file=single_html_path)
+            except Exception as e:
+                print(f"[PATIENT {idx}] Cross-temporal-feature analysis failed: {e}")
 
 if __name__ == "__main__":
     main() 

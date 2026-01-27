@@ -34,12 +34,12 @@ model:
   dropout: 0.2
   learning_rate: 0.001
   batch_size: 64
-  n_epochs: 500
-  patience: 10
+  n_epochs: 100
+  patience: 5
 
 paths:
   results_path: ./results/mimic/
   save_path: ./results/mimic/
 
 tuning:
-  n_epochs: 500 
+  n_epochs: 100 

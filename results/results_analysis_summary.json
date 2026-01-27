@@ -1,5 +1,5 @@
 {
-  "analysis_date": "2025-09-20 17:03:37",
+  "analysis_date": "2025-10-01 16:59:24",
   "datasets_analyzed": [
     "CKD",
     "MIMIC-IV"
@@ -15,38 +15,38 @@
   "summary": {
     "CKD": {
       "Best_F1": {
-        "model": "TRANSFORMER",
-        "value": 0.28
+        "model": "STAGENET",
+        "value": 0.2745
       },
       "Best_AUROC": {
         "model": "TRANSFORMER",
-        "value": 0.6547
+        "value": 0.7073
       },
       "Best_Accuracy": {
-        "model": "TRANSFORMER",
-        "value": 0.8672
+        "model": "ADACARE",
+        "value": 0.9114
       },
       "Best_Precision": {
-        "model": "TRANSFORMER",
-        "value": 0.2121
+        "model": "ADACARE",
+        "value": 0.2667
       }
     },
     "MIMIC-IV": {
       "Best_F1": {
-        "model": "TRANSFORMER",
-        "value": 0.4635
+        "model": "COI",
+        "value": 0.4978
       },
       "Best_AUROC": {
         "model": "TRANSFORMER",
-        "value": 0.6604
+        "value": 0.8073
       },
       "Best_Accuracy": {
-        "model": "TRANSFORMER",
-        "value": 0.9162
+        "model": "RETAIN",
+        "value": 0.9
       },
       "Best_Precision": {
-        "model": "TRANSFORMER",
-        "value": 0.758
+        "model": "COI",
+        "value": 0.3838
       }
     }
   }

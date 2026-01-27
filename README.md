@@ -34,12 +34,13 @@ Chain-of-Influence (CoI) addresses the critical gap in clinical predictive model
 │   │   └── coi.py               # Chain-of-Influence model
 │   ├── data/                    # Data processing utilities
 │   │   ├── preprocess.py        # Data preprocessing
-│   │   └── tsmote.py            # Temporal SMOTE implementation
+│   │   └── enhanced_preprocessing.py # Temporal-aware preprocessing
 │   └── utils/                   # Utility functions
 │       └── report_best_model.py # Model reporting utilities
 ├── scripts/                     # Training and analysis scripts
 │   ├── train.py                 # Model training script
 │   ├── analyze.py               # Model analysis and visualization
+    |-- preprocess_ckd_fast.py   # CKD preprocessing (raw -> processed)
 │   └── preprocess_mimiciv.py    # MIMIC-IV preprocessing
 ├── config/                      # Configuration files
 │   ├── coi_config.yaml          # CoI model configuration
@@ -97,6 +98,14 @@ For researchers and developers who want to train models or reproduce results:
    pip install -r requirements.txt
    ```
 
+   **Or with `uv` (recommended for speed/reproducibility):**
+   ```bash
+   uv venv
+   # Windows PowerShell
+   .venv\Scripts\Activate.ps1
+   uv sync
+   ```
+
 **Data Setup:**
 
 Follow the instructions in [`data/README.md`](data/README.md) to obtain and organize the datasets:
@@ -109,12 +118,12 @@ Follow the instructions in [`data/README.md`](data/README.md) to obtain and orga
 
 Train all models on CKD dataset (results saved to `./results/ckd/`):
 ```bash
-python scripts/train.py --model bilstm --dataset ckd --hyperparameter-search
-python scripts/train.py --model retain --dataset ckd --hyperparameter-search
-python scripts/train.py --model transformer --dataset ckd --hyperparameter-search
-python scripts/train.py --model adacare --dataset ckd --hyperparameter-search
-python scripts/train.py --model stagenet --dataset ckd --hyperparameter-search
-python scripts/train.py --model coi --dataset ckd --hyperparameter-search
+python scripts/train.py --model bilstm --dataset ckd --standard --hyperparameter-search
+python scripts/train.py --model retain --dataset ckd --standard --hyperparameter-search
+python scripts/train.py --model transformer --dataset ckd --standard --hyperparameter-search
+python scripts/train.py --model adacare --dataset ckd --standard --hyperparameter-search
+python scripts/train.py --model stagenet --dataset ckd --standard --hyperparameter-search
+python scripts/train.py --model coi --dataset ckd --standard --hyperparameter-search
 ```
 
 Train all models on MIMIC-IV dataset (results saved to `./results/mimic/`):
@@ -137,23 +146,12 @@ python scripts/train.py --model transformer --config config/mimiciv_transformer_
 
 Run all models on both datasets automatically:
 
-**Linux/Mac:**
 ```bash
-# Make script executable and run
-chmod +x run_all_experiments.sh
-./run_all_experiments.sh
+# Cross-platform Python pipeline (will prompt for confirmation)
+python run_all_experiments.py
 
 # Or with custom parameters
-./run_all_experiments.sh --combinations 10 --conda-env coi
-```
-
-**Windows:**
-```cmd
-# Run with default settings (2 combinations per model)
-run_all_experiments.bat
-
-# Or with custom parameters (combinations, conda-env)
-run_all_experiments.bat 10 coi
+python run_all_experiments.py --combinations 10 --env coi
 ```
 
 This pipeline will:
@@ -189,28 +187,46 @@ python scripts/analyze.py --model retain --output results/comparison
 python scripts/analyze.py --model coi --output results/comparison
 ```
 
+How `scripts/analyze.py` resolves inputs:
+- `--model` is required (e.g., `coi`, `retain`, `bilstm`, `transformer`, `adacare`, `stagenet`)
+- If `--config` is omitted, it uses `config/{model}_config.yaml`
+- If `--checkpoint` is omitted, it uses `results_path/{model}_best_model_hypersearch.pt` from the config
+
+Outputs written by the analysis script:
+- Cohort-level outputs under `results/<name>/cohort/`
+- Eight individual patient sets under `results/<name>/patient_<idx>_label_<0|1>/`
+- The 8 patients are selected automatically (balanced positives/negatives when possible) with seed `2025`
+
+Optional explicit paths:
+```bash
+# Use an explicit checkpoint and config
+python scripts/analyze.py --model coi --config config/coi_config.yaml --checkpoint results/ckd/coi_best_model_hypersearch.pt --output results/coi_analysis
+```
+
 **Hyperparameter Tuning:**
 
 Control the number of hyperparameter combinations to test:
 
 ```bash
 # Quick test (2-5 minutes)
-python scripts/train.py --model transformer --dataset ckd --hyperparameter-search --n-combinations 2
+python scripts/train.py --model transformer --dataset ckd --standard --hyperparameter-search --n-combinations 2
 
 # Development testing (10-30 minutes)
-python scripts/train.py --model transformer --dataset ckd --hyperparameter-search --n-combinations 5
+python scripts/train.py --model transformer --dataset ckd --standard --hyperparameter-search --n-combinations 5
 
 # Thorough tuning (1-5 hours)
-python scripts/train.py --model transformer --dataset ckd --hyperparameter-search --n-combinations 20
+python scripts/train.py --model transformer --dataset ckd --standard --hyperparameter-search --n-combinations 20
 
 # Default: 300 combinations (comprehensive search)
-python scripts/train.py --model transformer --dataset ckd --hyperparameter-search
+python scripts/train.py --model transformer --dataset ckd --standard --hyperparameter-search
 ```
 
-Available hyperparameter combinations per model:
-- **Transformer**: 1,458 total combinations (emb_dim×hidden_dim×num_heads×num_layers×lr×batch_size×dropout)
-- **CoI**: 972 total combinations
-- **RETAIN**: 324 total combinations
+Available hyperparameter combinations per model (from `scripts/train.py` grids):
+- **CoI**: 2,916 total combinations
+- **Transformer**: 1,458 total combinations
+- **AdaCare**: 486 total combinations
+- **StageNet**: 486 total combinations
+- **RETAIN**: 108 total combinations
 - **BiLSTM**: 108 total combinations
 
 </details>

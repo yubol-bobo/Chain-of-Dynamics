@@ -23,7 +23,6 @@ feature_names:
   - Intact_PTH
   - Hemoglobin
   - UACR
-  - Bicarbonate
   - Age
   - Gender
   - Race
@@ -35,4 +34,4 @@ feature_names:
   - net_exp_DR
   - net_exp_I
   - net_exp_O
-  - net_exp_P 
+  - net_exp_P

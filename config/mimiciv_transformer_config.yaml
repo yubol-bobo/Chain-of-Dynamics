@@ -5,9 +5,9 @@ data:
 
 hyperparameters:
   batch_size:
-    - 32
     - 64
     - 128
+    - 256
   dropout:
     - 0.1
     - 0.2
@@ -17,21 +17,21 @@ hyperparameters:
     - 128
     - 256
   hidden_dim:
+    - 128
     - 256
     - 512
-    - 1024
   learning_rate:
-    - 0.000001
-    - 0.00001
     - 0.0001
+    - 0.001
+    - 0.01
   num_heads:
     - 4
     - 8
     - 16
   num_layers:
     - 2
+    - 3
     - 4
-    - 6
 
 model:
   type: transformer
@@ -44,8 +44,8 @@ model:
   dropout: 0.2
   learning_rate: 0.00001
   batch_size: 64
-  n_epochs: 500
-  patience: 10
+  n_epochs: 100
+  patience: 5
   max_seq_len: 48
 
 paths:
@@ -53,4 +53,4 @@ paths:
   save_path: ./results/mimic/
 
 tuning:
-  n_epochs: 500
+  n_epochs: 100

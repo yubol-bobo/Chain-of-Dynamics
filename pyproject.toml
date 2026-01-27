@@ -1,0 +1,23 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "chain-of-dynamics"
+version = "0.0.0"
+description = "Chain-of-Influence models and analysis for clinical time series."
+readme = "README.md"
+requires-python = ">=3.8"
+dependencies = [
+  "numpy",
+  "pandas",
+  "scikit-learn",
+  "matplotlib",
+  "seaborn",
+  "PyYAML",
+  "torch",
+  "tqdm",
+  "imblearn",
+  "scipy",
+]
+

@@ -202,6 +202,12 @@ class CoI(nn.Module):
             output: Prediction tensor of shape [batch_size, output_dim]
         """
         batch_size, seq_len, _ = x.size()
+        max_len = self.pos_encoding.size(1)
+        if seq_len > max_len:
+            raise ValueError(
+                f"Sequence length {seq_len} exceeds max_seq_len {max_len}. "
+                "Increase max_seq_len in the model config."
+            )
         
         # Clear previous attention weights
         self.cross_attn_weights = []
@@ -280,11 +286,12 @@ class CoI(nn.Module):
         seq_len = a_t.size(0)
         input_dim = self.input_dim
         
-        contributions = torch.zeros(seq_len, input_dim)
+        device = a_t.device
+        contributions = torch.zeros(seq_len, input_dim, device=device)
         
         # Compute contributions for each time step and feature
         for t in range(seq_len):
             for j in range(input_dim):
                 contributions[t, j] = a_t[t] * torch.sum(b_t[t] * W_emb[:, j])
         
-        return np.array(contributions.cpu().tolist())
+        return contributions.detach().cpu().numpy()

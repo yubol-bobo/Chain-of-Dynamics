@@ -1,6 +1,6 @@
 data:
   month_count: 24
-  processed_path: ./data/ckd_data/processed/data_for_modeling_corrected.csv
+  processed_path: ./data/ckd_data/processed/ckd_merged_data_for_modeling.csv
   raw_path: ./data/ckd_data/raw/
 
 hyperparameters:

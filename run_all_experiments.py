@@ -2,12 +2,26 @@
 """
 Python script to run all Chain-of-Dynamics experiments automatically.
 This is more reliable than batch files and works cross-platform.
+
+Usage examples:
+    # Quick testing with 2 combinations
+    python run_all_experiments.py --combinations 2
+
+    # Test specific models and datasets
+    python run_all_experiments.py -c 5 --models bilstm retain --datasets ckd
+
+    # Full experiment (default)
+    python run_all_experiments.py
+
+    # Custom conda environment
+    python run_all_experiments.py --env my_env --combinations 10
 """
 
 import subprocess
 import sys
 import os
 import time
+import argparse
 from datetime import datetime
 
 def run_command(command, description):
@@ -32,15 +46,46 @@ def run_command(command, description):
         return False
 
 def main():
-    # Configuration
-    combinations = 500
-    conda_env = "coi"
-
     # Parse command line arguments
-    if len(sys.argv) > 1:
-        combinations = int(sys.argv[1])
-    if len(sys.argv) > 2:
-        conda_env = sys.argv[2]
+    parser = argparse.ArgumentParser(
+        description='Run all Chain-of-Dynamics experiments with enhanced preprocessing',
+        formatter_class=argparse.ArgumentDefaultsHelpFormatter
+    )
+
+    parser.add_argument(
+        '--combinations', '-c',
+        type=int,
+        default=500,
+        help='Number of hyperparameter combinations to test per model (use smaller numbers like 2-10 for quick testing)'
+    )
+
+    parser.add_argument(
+        '--env', '-e',
+        type=str,
+        default='coi',
+        help='Conda environment name to use'
+    )
+
+    parser.add_argument(
+        '--datasets',
+        nargs='+',
+        default=['ckd', 'mimic'],
+        choices=['ckd', 'mimic'],
+        help='Datasets to run experiments on'
+    )
+
+    parser.add_argument(
+        '--models',
+        nargs='+',
+        default=['bilstm', 'retain', 'transformer', 'adacare', 'stagenet', 'coi'],
+        choices=['bilstm', 'retain', 'transformer', 'adacare', 'stagenet', 'coi'],
+        help='Models to train'
+    )
+
+    args = parser.parse_args()
+
+    combinations = args.combinations
+    conda_env = args.env
 
     print("="*80)
     print("              CHAIN-OF-DYNAMICS EXPERIMENT PIPELINE")
@@ -48,7 +93,17 @@ def main():
     print(f"Configuration:")
     print(f"  - Combinations per model: {combinations}")
     print(f"  - Conda environment: {conda_env}")
+    print(f"  - Enhanced preprocessing: ENABLED")
+    print(f"  - Datasets: {', '.join(args.datasets)}")
+    print(f"  - Models: {', '.join(args.models)}")
     print(f"  - Working directory: {os.getcwd()}")
+    print()
+
+    # Show helpful usage examples
+    if combinations <= 10:
+        print("🧪 TESTING MODE: Using small number of combinations for quick testing")
+    else:
+        print("🚀 FULL EXPERIMENT MODE: Running comprehensive hyperparameter search")
     print()
 
     # Ask for confirmation
@@ -61,9 +116,9 @@ def main():
     os.makedirs("results/ckd", exist_ok=True)
     os.makedirs("results/mimic", exist_ok=True)
 
-    # Define all experiments
-    models = ['bilstm', 'retain', 'transformer', 'adacare', 'stagenet', 'coi']
-    datasets = ['ckd', 'mimic']
+    # Use models and datasets from command line arguments
+    models = args.models
+    datasets = args.datasets
 
     total_experiments = len(models) * len(datasets)
     current_experiment = 0
@@ -84,12 +139,13 @@ def main():
 
             description = f"Training {model.upper()} on {dataset.upper()} [{current_experiment}/{total_experiments}]"
 
-            # Build command
+            # Build command with enhanced preprocessing
             command = [
                 'conda', 'run', '-n', conda_env, 'python',
                 'scripts/train.py',
                 '--model', model,
                 '--dataset', dataset,
+                '--enhanced',  # Enable enhanced preprocessing by default
                 '--hyperparameter-search',
                 '--n-combinations', str(combinations)
             ]
