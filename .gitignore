@@ -27,6 +27,7 @@ MANIFEST
 *.pt
 
 # Data directories (private data not to be shared)
+data/
 data/ckd/
 data/mimic-iv/
 ckd_data/
